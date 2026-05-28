@@ -52,12 +52,17 @@ async def build_station_generation_preview(db: Session, station: Station, settin
             diagnostics = pre.get("diagnostics", {}) if isinstance(pre, dict) else {}
             voice = diagnostics.get("voice_profile", {}) if isinstance(diagnostics, dict) else {}
             song_brief = diagnostics.get("song_brief", {}) if isinstance(diagnostics, dict) else {}
+            lyric_quality = diagnostics.get("lyric_quality", {}) if isinstance(diagnostics, dict) else {}
             recent_generation_item: dict[str, Any] = {"diagnostics": diagnostics}
             if isinstance(voice, dict) and str(voice.get("id") or "").strip():
                 item["voice_profile_id"] = str(voice.get("id")).strip()
                 recent_generation_item["voice_profile_id"] = item["voice_profile_id"]
             if isinstance(song_brief, dict) and song_brief:
                 recent_generation_item["song_brief"] = song_brief
+            if isinstance(lyric_quality, dict):
+                signature = lyric_quality.get("signature", {})
+                if isinstance(signature, dict):
+                    recent_generation_item["lyric_signature"] = signature
             recent_generations.append(recent_generation_item)
         recent_ctx.append(item)
 

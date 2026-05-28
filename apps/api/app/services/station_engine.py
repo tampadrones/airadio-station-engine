@@ -1126,6 +1126,7 @@ class StationEngine:
                     item["song_topic"] = topic
                 voice_profile = diagnostics.get("voice_profile", {}) if isinstance(diagnostics, dict) else {}
                 song_brief = diagnostics.get("song_brief", {}) if isinstance(diagnostics, dict) else {}
+                lyric_quality = diagnostics.get("lyric_quality", {}) if isinstance(diagnostics, dict) else {}
                 recent_generation_item = {"diagnostics": diagnostics}
                 if isinstance(voice_profile, dict):
                     voice_id = str(voice_profile.get("id") or "").strip()
@@ -1134,6 +1135,10 @@ class StationEngine:
                         recent_generation_item["voice_profile_id"] = voice_id
                 if isinstance(song_brief, dict) and song_brief:
                     recent_generation_item["song_brief"] = song_brief
+                if isinstance(lyric_quality, dict):
+                    signature = lyric_quality.get("signature", {})
+                    if isinstance(signature, dict):
+                        recent_generation_item["lyric_signature"] = signature
                 if len(recent_generation_item) > 1 or isinstance(diagnostics, dict):
                     recent_generations.append(recent_generation_item)
             recent_ctx.append(item)

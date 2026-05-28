@@ -136,7 +136,26 @@ async def test_preprocess_uses_dedicated_remote_lyrics_when_configured(monkeypat
         lyrics_refiner_model = "qwen2.5"
 
     async def fake_remote_lyrics(**_: object):
-        return "[Verse 1]\nWe burn for the skyline\n[Chorus]\nRun with me tonight", "http://openwebui.local"
+        return (
+            "[INTRO]\nNeon marks the city escape before the turn\n\n"
+            "[VERSE 1]\nI stand inside the chrome dashboard glow\n"
+            "The past keeps calling while the road demands a choice\n"
+            "Tail lights cut the wet overpass in blue\n"
+            "Cassette hiss keeps the message honest\n\n"
+            "[CHORUS]\nCity escape is the message I cannot ignore\n"
+            "Chrome catches the warning in a sharper light\n"
+            "Neon names the exit before I miss it\n"
+            "I choose the road before it chooses me\n\n"
+            "[VERSE 2]\nThe violet signs lean over the last lane\n"
+            "Blue rain turns the old promise into proof\n"
+            "The message arrives with no room left for hiding\n"
+            "Tail lights pull the memory out of reach\n\n"
+            "[FINAL CHORUS]\nCity escape becomes the turn I finally take\n"
+            "Chrome catches the warning in a different light\n"
+            "Neon names the exit before the fade\n"
+            "I leave with proof and not a slogan\n",
+            "http://openwebui.local",
+        )
 
     monkeypatch.setattr(pp, "_try_remote_lyrics", fake_remote_lyrics)
 
@@ -155,7 +174,7 @@ async def test_preprocess_uses_dedicated_remote_lyrics_when_configured(monkeypat
     )
 
     assert out.lyrics is not None
-    assert "skyline" in out.lyrics
+    assert "chrome dashboard glow" in out.lyrics.lower()
     assert out.diagnostics["lyrics_source"] == "openwebui:http://openwebui.local"
     assert out.diagnostics["lyrics_model"] == "qwen2.5"
     assert isinstance(out.diagnostics.get("suggested_title"), str)

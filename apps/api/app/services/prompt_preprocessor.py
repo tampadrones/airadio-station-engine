@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from app.services.prompt_builder import build_music_caption_formula, build_song_concept_prompt, build_technical_parameters, format_song_brief
+from app.services.lyric_quality_gate import evaluate_lyrics_quality
 from app.services.song_brief import build_song_brief
 from app.services.voice_profiles import format_voice_directive
 
@@ -251,6 +252,63 @@ def _concept_from_song_brief(song_brief: dict[str, Any] | None, fallback: dict[s
         "images": image_text or fallback.get("images") or "",
         "chorus_action": str(song_brief.get("hook_concept") or fallback.get("chorus_action") or "").strip(),
     }
+
+
+def _strict_local_lyrics_from_brief(
+    *,
+    song_brief: dict[str, Any],
+    genre: str,
+    voice_profile: dict[str, Any] | None,
+) -> str:
+    _ = (genre, voice_profile)
+    topic = str(song_brief.get("topic") or "turning point").strip()
+    narrator = str(song_brief.get("narrator") or "first-person narrator").strip()
+    setting = str(song_brief.get("setting") or "a specific room before dawn").strip()
+    conflict = str(song_brief.get("conflict") or "one honest choice has a cost").strip()
+    emotional_turn = str(song_brief.get("emotional_turn") or "fear becomes a named cost").strip()
+    hook = str(song_brief.get("hook_concept") or "the hook answers the conflict directly").strip()
+    strategy = str(song_brief.get("chorus_strategy") or "repeat one concrete image with a changed final line").strip()
+    imagery = song_brief.get("imagery_bank", [])
+    if not isinstance(imagery, list):
+        imagery = []
+    images = [str(x).strip() for x in imagery if str(x).strip()]
+    while len(images) < 6:
+        images.append(["doorway", "weather", "hands", "window", "receipt", "last call"][len(images)])
+    title_seed = str(song_brief.get("title_seed") or topic.title()).strip()
+    return (
+        "[INTRO]\n"
+        f"{images[0].title()} marks the place where {topic} begins\n\n"
+        "[VERSE 1]\n"
+        f"I speak as {narrator}\n"
+        f"The scene is {setting}\n"
+        f"{images[1].title()} catches on my sleeve while I count the cost\n"
+        f"{conflict.capitalize()}\n\n"
+        "[PRE-CHORUS]\n"
+        f"{images[2].title()} gives the warning I ignored\n"
+        f"{emotional_turn.capitalize()}\n\n"
+        "[CHORUS]\n"
+        f"{title_seed} is the name I give the turn\n"
+        f"{hook.capitalize()}\n"
+        f"{images[3].title()} stays with me when the room goes quiet\n"
+        f"I choose the cost before it chooses me\n\n"
+        "[VERSE 2]\n"
+        f"The proof sits there in {images[4]} and breath\n"
+        f"I stop pretending {topic} is only a mood\n"
+        f"{setting.capitalize()} will remember what I did\n"
+        f"{conflict.capitalize()} but I keep moving\n\n"
+        "[BRIDGE]\n"
+        f"{strategy.capitalize()}\n"
+        f"{images[5].title()} turns the silence into evidence\n"
+        f"{emotional_turn.capitalize()}\n\n"
+        "[FINAL CHORUS]\n"
+        f"{title_seed} is the mark I carry out\n"
+        f"{hook.capitalize()} before the fade\n"
+        f"{images[0].title()} answers back in a different light\n"
+        f"I choose the cost and leave with proof\n\n"
+        "[OUTRO]\n"
+        f"{images[1].title()} fades behind the last door\n"
+        f"{topic.title()} finally has a shape\n"
+    )
 
 
 def _build_lyrics_draft(
@@ -1604,6 +1662,93 @@ async def preprocess_generation(
         negative_prompt = _sanitize_ascii_text(negative_prompt, collapse_whitespace=True)
         lyrics = _sanitize_ascii_text(lyrics or "") or None
     lyrics = _finalize_lyrics_for_generator(lyrics)
+    lyric_quality = {
+        "passed": True,
+        "score": 1.0,
+        "reasons": [],
+        "signature": {"mode": "instrumental_only"},
+    }
+    if lyrics_mode != "instrumental_only":
+        lyric_quality = evaluate_lyrics_quality(
+            lyrics=lyrics,
+            song_brief=song_brief,
+            voice_profile=voice_profile,
+            recent_generations=recent_generations,
+        )
+        if not bool(lyric_quality.get("passed")) and lyrics_model and lyrics_urls:
+            repair_salt = f"{variation_salt}-repair"
+            remote_result = await _try_remote_lyrics(
+                base_urls=lyrics_urls,
+                model=lyrics_model,
+                api_key=lyrics_api_key,
+                auth_email=lyrics_auth_email,
+                auth_password=lyrics_auth_password,
+                timeout_seconds=lyrics_timeout,
+                temperature=min(0.95, lyrics_temp + 0.12),
+                genre=genre,
+                title=_suggest_song_title(station_name=station_name, topic=chosen_topic, daypart=daypart),
+                mood=mood,
+                topic=chosen_topic,
+                clean_lyrics_only=clean_lyrics_only,
+                station_name=station_name,
+                station_description=station_description,
+                personality=personality,
+                recent_tracks=[
+                    *recent_tracks,
+                    {
+                        "title": "avoid failed lyric draft",
+                        "song_topic": chosen_topic,
+                        "quality_reasons": lyric_quality.get("reasons", []),
+                    },
+                ],
+                variation_salt=repair_salt,
+                topic_ideas=[str(x).strip() for x in (station_profile.get("topic_ideas", []) or []) if str(x).strip()],
+                taste_hints=[str(x).strip() for x in (station_profile.get("taste_hints", []) or []) if str(x).strip()],
+                lyric_constraints=lyric_constraints,
+                voice_profile=voice_profile if lyrics_mode != "instrumental_only" else None,
+                song_brief=song_brief,
+            )
+            repair_lyrics: str | None
+            repair_source: str | None
+            repair_title: str | None
+            if isinstance(remote_result, tuple) and len(remote_result) == 3:
+                repair_lyrics, repair_source, repair_title = remote_result
+            elif isinstance(remote_result, tuple) and len(remote_result) == 2:
+                repair_lyrics, repair_source = remote_result
+                repair_title = None
+            else:
+                repair_lyrics, repair_source, repair_title = None, None, None
+            if repair_lyrics:
+                if force_ascii:
+                    repair_lyrics = _sanitize_ascii_text(repair_lyrics or "") or None
+                repaired = _finalize_lyrics_for_generator(repair_lyrics)
+                repair_quality = evaluate_lyrics_quality(
+                    lyrics=repaired,
+                    song_brief=song_brief,
+                    voice_profile=voice_profile,
+                    recent_generations=recent_generations,
+                )
+                if bool(repair_quality.get("passed")):
+                    lyrics = repaired
+                    lyric_quality = repair_quality
+                    lyrics_source = f"openwebui:{repair_source}:quality_repair"
+                    if repair_title:
+                        suggested_title = " ".join(str(repair_title).split())[:80] or suggested_title
+        if not bool(lyric_quality.get("passed")):
+            lyrics = _finalize_lyrics_for_generator(
+                _strict_local_lyrics_from_brief(
+                    song_brief=song_brief,
+                    genre=genre,
+                    voice_profile=voice_profile if lyrics_mode != "instrumental_only" else None,
+                )
+            )
+            lyric_quality = evaluate_lyrics_quality(
+                lyrics=lyrics,
+                song_brief=song_brief,
+                voice_profile=voice_profile,
+                recent_generations=recent_generations,
+            )
+            lyrics_source = f"{lyrics_source}:strict_local_fallback"
     local_prompt = _build_local_prompt(
         base_prompt=base_prompt,
         music_caption=music_caption,
@@ -1665,6 +1810,7 @@ async def preprocess_generation(
             remote.diagnostics["lyric_constraints"] = lyric_constraints
             remote.diagnostics["voice_profile"] = voice_profile or {}
             remote.diagnostics["song_brief"] = song_brief
+            remote.diagnostics["lyric_quality"] = lyric_quality
             if not remote.technical_parameters:
                 remote.technical_parameters = technical_parameters
             if not remote.music_caption:
@@ -1693,6 +1839,7 @@ async def preprocess_generation(
             "lyric_constraints": lyric_constraints,
             "voice_profile": voice_profile or {},
             "song_brief": song_brief,
+            "lyric_quality": lyric_quality,
             "technical_parameters": technical_parameters,
         },
         music_caption=music_caption,
