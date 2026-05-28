@@ -59,6 +59,40 @@ async def test_preprocess_builds_lyrics_for_vocal_mode():
 
 
 @pytest.mark.asyncio
+async def test_preprocess_threads_voice_profile_and_concrete_topic_into_caption():
+    voice = {
+        "id": "male_dark_alt",
+        "gender": "male",
+        "vocal_tone": "dark, tense alternative tone",
+        "delivery": "close brooding verses",
+        "range_hint": "low to mid register",
+        "negative_prompt_terms": ["no bright pop smile"],
+    }
+    out = await preprocess_generation(
+        settings=DummySettings(),
+        station_name="Neon Harbor",
+        station_description="Retro city pulse and chrome midnight air.",
+        genre="Synthwave",
+        personality="Velvet Static",
+        daypart="evening",
+        mood="rise",
+        station_profile={"lyrics_mode": "vocal_forward", "clean_lyrics_only": True, "topic_ideas": ["arcade goodbye"]},
+        base_prompt="Generate a full, radio-ready Synthwave track.",
+        negative_prompt="avoid clipping",
+        recent_tracks=[],
+        voice_profile=voice,
+    )
+
+    assert "Vocal profile:" in out.music_caption
+    assert "dark, tense alternative tone" in out.prompt
+    assert "arcade goodbye" in out.prompt.lower()
+    assert out.diagnostics["voice_profile"]["id"] == "male_dark_alt"
+    assert out.lyrics is not None
+    assert "Song concept:" not in out.lyrics
+    assert "Vocal profile:" not in out.lyrics
+
+
+@pytest.mark.asyncio
 async def test_preprocess_generates_different_lyrics_per_track_for_same_station():
     profile = {"lyrics_mode": "vocal_forward", "clean_lyrics_only": True, "topic_ideas": ["night drive"]}
     a = await _run(profile)

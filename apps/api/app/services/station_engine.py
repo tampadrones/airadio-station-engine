@@ -46,6 +46,7 @@ from app.services.prompt_preprocessor import preprocess_generation, suggest_trac
 from app.services.qc import analyze_audio
 from app.services.station_profile import normalize_station_profile
 from app.services.storage import move_to_failed, station_track_dir
+from app.services.voice_profiles import choose_voice_profile
 
 logger = logging.getLogger(__name__)
 
@@ -1110,6 +1111,7 @@ class StationEngine:
 
         recent_ctx = []
         fingerprints = []
+        recent_generations = []
         for tr, analysis, generation in recent:
             item = {"title": tr.title}
             if analysis:
@@ -1122,6 +1124,18 @@ class StationEngine:
                 topic = str((diagnostics or {}).get("song_topic", "")).strip()
                 if topic:
                     item["song_topic"] = topic
+                voice_profile = diagnostics.get("voice_profile", {}) if isinstance(diagnostics, dict) else {}
+                song_brief = diagnostics.get("song_brief", {}) if isinstance(diagnostics, dict) else {}
+                recent_generation_item = {"diagnostics": diagnostics}
+                if isinstance(voice_profile, dict):
+                    voice_id = str(voice_profile.get("id") or "").strip()
+                    if voice_id:
+                        item["voice_profile_id"] = voice_id
+                        recent_generation_item["voice_profile_id"] = voice_id
+                if isinstance(song_brief, dict) and song_brief:
+                    recent_generation_item["song_brief"] = song_brief
+                if len(recent_generation_item) > 1 or isinstance(diagnostics, dict):
+                    recent_generations.append(recent_generation_item)
             recent_ctx.append(item)
 
         profile = normalize_station_profile(station.station_profile or {})
@@ -1156,6 +1170,12 @@ class StationEngine:
             cohesion_spectrum=int(profile.get("cohesion_spectrum", 80)),
             discovery_depth=int(profile.get("discovery_depth", 20)),
         )
+        voice_profile = choose_voice_profile(
+            station.genre,
+            profile,
+            recent_generations,
+            salt=f"{station.id}|{datetime.utcnow().isoformat()}|{len(recent_ctx)}",
+        )
         prompt = build_prompt(
             genre=station.genre,
             personality=station.personality,
@@ -1165,8 +1185,9 @@ class StationEngine:
             recent_tracks=recent_for_guidance,
             anti_repetition_notes=anti,
             station_profile=profile,
+            voice_profile=voice_profile,
         )
-        negative_prompt = build_negative_prompt(genre=station.genre, station_profile=profile)
+        negative_prompt = build_negative_prompt(genre=station.genre, station_profile=profile, voice_profile=voice_profile)
         avoid_terms = [*disliked_topics[:3], *disliked_hints[:3]]
         if avoid_terms:
             negative_prompt = f"{negative_prompt}. Avoid repeating these listener-disliked directions: {', '.join(avoid_terms)}."
@@ -1182,6 +1203,8 @@ class StationEngine:
             base_prompt=prompt,
             negative_prompt=negative_prompt,
             recent_tracks=recent_for_guidance,
+            voice_profile=voice_profile,
+            recent_generations=recent_generations,
         )
         prompt = preprocessed.prompt
         negative_prompt = preprocessed.negative_prompt
@@ -1275,6 +1298,7 @@ class StationEngine:
             "liked_moods": liked_moods[:2],
             "disliked_moods": disliked_moods[:2],
         }
+        diagnostics["voice_profile"] = voice_profile
         diagnostics["ace_payload_snapshot"] = self._ace_payload_snapshot(ace_format_payload)
         diagnostics["ace_template_path"] = self._ace_format_template_path or ""
 

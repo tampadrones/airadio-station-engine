@@ -11,7 +11,9 @@ from typing import Any
 
 import httpx
 
-from app.services.prompt_builder import build_music_caption_formula, build_song_concept_prompt, build_technical_parameters
+from app.services.prompt_builder import build_music_caption_formula, build_song_concept_prompt, build_technical_parameters, format_song_brief
+from app.services.song_brief import build_song_brief
+from app.services.voice_profiles import format_voice_directive
 
 _AUTH_TOKEN_CACHE: dict[str, tuple[str, float]] = {}
 _TEMPLATE_PHRASES = {
@@ -108,6 +110,8 @@ def _finalize_lyrics_for_generator(lyrics: str | None) -> str | None:
         re.compile(r"^\s*Tone:\s*", re.IGNORECASE),
         re.compile(r"^\s*Theme anchors:\s*", re.IGNORECASE),
         re.compile(r"^\s*Style anchor:\s*", re.IGNORECASE),
+        re.compile(r"^\s*Song concept:\s*", re.IGNORECASE),
+        re.compile(r"^\s*Vocal profile:\s*", re.IGNORECASE),
         re.compile(r"^\s*Avoid verbatim repeats", re.IGNORECASE),
         re.compile(r"^\s*Station style:\s*", re.IGNORECASE),
         re.compile(r"^\s*Station personality:\s*", re.IGNORECASE),
@@ -172,6 +176,83 @@ def _tempo_target(genre: str, daypart: str) -> str:
     return "90-130 BPM aligned with the target genre"
 
 
+def _build_song_concept(
+    *,
+    genre: str,
+    topic: str,
+    daypart: str,
+    mood: str,
+    station_description: str,
+) -> dict[str, str]:
+    cleaned_topic = _clean_topic_phrase(topic) or "turning point"
+    g = (genre or "").lower()
+    mood_word = str(mood or "baseline").lower()
+    if _is_nu_metal_like(genre=genre):
+        return {
+            "premise": f"a trapped narrator reliving {cleaned_topic} inside a hostile room",
+            "setting": "sealed hallway, stained glass, red exit light, humming wires",
+            "conflict": "the escape attempt keeps resetting and the body carries the damage",
+            "images": "glass, wire, pressure, rust, flicker, breath, fracture",
+            "chorus_action": "turn the failed escape into a shouted survival hook",
+        }
+    if "trap" in g or "rap" in g:
+        return {
+            "premise": f"a focused narrator turning {cleaned_topic} into leverage",
+            "setting": "afterhours block, dashboard glow, locked-in studio, rain on concrete",
+            "conflict": "pressure, doubt, and distractions try to break the run",
+            "images": "phone light, wet pavement, clean aim, coded route, hard-earned win",
+            "chorus_action": "make the hook sound like a decisive move, not a slogan",
+        }
+    if "synthwave" in g:
+        return {
+            "premise": f"a midnight driver chasing {cleaned_topic} through a neon city",
+            "setting": "chrome overpass, arcade glow, rain-slick skyline, blue dashboard",
+            "conflict": "nostalgia and urgency pull in opposite directions",
+            "images": "neon, chrome, glass rain, cassette hiss, tail lights, horizon",
+            "chorus_action": "make the chorus a cinematic turn in the road",
+        }
+    if "lofi" in g or "lo-fi" in g or "chillhop" in g:
+        return {
+            "premise": f"a quiet observer processing {cleaned_topic} in small private details",
+            "setting": "desk lamp, window rain, notebook margins, sleeping apartment",
+            "conflict": "old thoughts keep circling until one practical truth lands",
+            "images": "paper, rain, cup steam, dim keys, soft dust, morning edge",
+            "chorus_action": "keep the hook intimate and reflective",
+        }
+    if "rock" in g or "metal" in g:
+        return {
+            "premise": f"a defiant narrator confronting {cleaned_topic} at the breaking point",
+            "setting": "wide road, hot stage lights, cracked asphalt, storm front",
+            "conflict": "fear and fatigue push back against a last stand",
+            "images": "thunder, steel, headlights, scar, smoke, open road",
+            "chorus_action": "make the chorus a physical release with a clear emotional stake",
+        }
+    return {
+        "premise": f"a character moving through {cleaned_topic} during the {daypart}",
+        "setting": station_description.strip()[:120] or f"{daypart} streets with a {mood_word} emotional charge",
+        "conflict": "a specific choice has to be made before the moment passes",
+        "images": "light, weather, hands, room tone, distance, doorway",
+        "chorus_action": "make the hook resolve the story premise in concrete language",
+    }
+
+
+def _concept_from_song_brief(song_brief: dict[str, Any] | None, fallback: dict[str, str]) -> dict[str, str]:
+    if not isinstance(song_brief, dict) or not song_brief:
+        return fallback
+    imagery = song_brief.get("imagery_bank", [])
+    if isinstance(imagery, list):
+        image_text = ", ".join(str(x).strip() for x in imagery if str(x).strip())
+    else:
+        image_text = str(imagery or "").strip()
+    return {
+        "premise": str(song_brief.get("angle") or fallback.get("premise") or "").strip(),
+        "setting": str(song_brief.get("setting") or fallback.get("setting") or "").strip(),
+        "conflict": str(song_brief.get("conflict") or fallback.get("conflict") or "").strip(),
+        "images": image_text or fallback.get("images") or "",
+        "chorus_action": str(song_brief.get("hook_concept") or fallback.get("chorus_action") or "").strip(),
+    }
+
+
 def _build_lyrics_draft(
     *,
     genre: str,
@@ -184,6 +265,8 @@ def _build_lyrics_draft(
     song_topic: str,
     variation_salt: str,
     recent_tracks: list[dict[str, Any]],
+    voice_profile: dict[str, Any] | None = None,
+    song_brief: dict[str, Any] | None = None,
 ) -> str | None:
     lyrics_mode = str(station_profile.get("lyrics_mode", "mixed"))
     if lyrics_mode == "instrumental_only":
@@ -195,6 +278,18 @@ def _build_lyrics_draft(
     safety = "Keep language clean and radio-safe." if clean_only else "Natural language is allowed; avoid gratuitous explicit content."
     topic_suffix = f"Theme anchors: {', '.join(topic_list)}." if topic_list else f"Theme anchors: {song_topic}."
     primary_topic = song_topic.strip() or "momentum"
+    fallback_concept = _build_song_concept(
+        genre=genre,
+        topic=primary_topic,
+        daypart=daypart,
+        mood=mood,
+        station_description=station_description,
+    )
+    concept = _concept_from_song_brief(song_brief, fallback_concept)
+    concept_images = [x.strip() for x in concept["images"].split(",") if x.strip()]
+    image_a = concept_images[0] if concept_images else "light"
+    image_b = concept_images[1] if len(concept_images) > 1 else "weather"
+    voice_directive = format_voice_directive(voice_profile)
 
     intro_lines = [
         f"Street lamps bloom while the {daypart} air turns electric",
@@ -205,12 +300,12 @@ def _build_lyrics_draft(
         f"Midnight static fades and the rhythm takes control",
     ]
     verse_openers = [
-        f"We run {primary_topic} like a code in overdrive",
-        f"{primary_topic.title()} hits first and the room snaps to focus",
-        f"Every lane opens when {primary_topic} takes the lead",
-        f"{primary_topic.title()} turns quiet doubt into momentum",
-        f"We chase {primary_topic} where the skyline fractures light",
-        f"{primary_topic.title()} writes our route in bright phosphor lines",
+        f"{primary_topic.title()} starts as {concept['premise']}",
+        f"I step into {primary_topic} with {concept['conflict']}",
+        f"The first sign of {primary_topic} cuts through {concept['setting']}",
+        f"{primary_topic.title()} presses close until the choice gets clear",
+        f"I follow {primary_topic} past the point where old excuses hold",
+        f"{primary_topic.title()} leaves its mark in {image_a} and breath",
     ]
     pre_lifts = [
         "One hard inhale and the room starts to levitate",
@@ -221,12 +316,12 @@ def _build_lyrics_draft(
         "One more second and we break into flight",
     ]
     bridge_lines = [
-        f"No safe route now, we bend {primary_topic} into lightning",
-        f"From floor to skyline, {primary_topic} keeps lifting the horizon",
-        f"Every setback turns to fuel while {primary_topic} stays in motion",
-        f"We cross the limit line and carry {primary_topic} through the storm",
-        f"The crowd leans in as {primary_topic} turns to anthem",
-        f"We hit the apex and hold {primary_topic} like fire",
+        f"No safe route now, {concept['conflict']}",
+        f"I name {primary_topic} in the place where {concept['setting']} closes in",
+        f"Every image comes back sharp: {concept['images']}",
+        f"We cross the limit line and make {primary_topic} answer back",
+        f"The room leans in as {primary_topic} turns specific and loud",
+        f"{concept['chorus_action'].capitalize()}",
     ]
     genre_motifs = {
         "synthwave": ["neon glass", "analog glow", "midnight skyline", "chrome horizon"],
@@ -250,12 +345,12 @@ def _build_lyrics_draft(
     }
     mood_words = mood_terms.get(str(mood).lower(), ["steady", "focused", "alive", "bright"])
     action_lines = [
-        f"We map the route in real time and never drop the thread",
-        f"Every bar lands sharp and keeps the whole frame moving",
-        f"We keep the pressure clean and let the chorus strike hard",
-        f"The rhythm stays precise while the melody cuts deeper",
-        f"We carry raw intent and make the hook feel inevitable",
-        f"No wasted motion, only forward pull and bright momentum",
+        f"I trace the proof through {image_a} and keep it close",
+        f"Every line points back to {concept['premise']}",
+        f"The pressure names itself: {concept['conflict']}",
+        f"I hold the scene in focus until the hook cuts deeper",
+        f"The chorus has a job now: {concept['chorus_action']}",
+        f"No filler, only the detail that makes {primary_topic} feel lived in",
     ]
     outro_lines = [
         "Tail lights fade but the fire in us stays lit",
@@ -373,10 +468,10 @@ def _build_lyrics_draft(
         f"{pick(pre_lifts, 'pre1')}\n"
         f"Every mile pulls the focus in tighter tonight\n\n"
         f"[Chorus]\n"
-        f"We hold the spark where the glass towers divide\n"
-        f"The room turns gold when the night opens wide\n"
-        f"No pause, no fade, {primary_topic} burns through the blue\n"
-        f"Right here, right now, the skyline pulls us through\n\n"
+        f"{primary_topic.title()} has a face in the window light\n"
+        f"{concept['conflict'].capitalize()} but I do not fold\n"
+        f"{concept['chorus_action'].capitalize()}\n"
+        f"I can name the cost and still keep hold\n\n"
         f"[Verse 2]\n"
         f"Street signs blur and the whole block tilts forward\n"
         f"We push {primary_topic} until hesitation breaks\n"
@@ -387,21 +482,23 @@ def _build_lyrics_draft(
         f"{pick(pre_lifts, 'pre2')}\n"
         f"Every echo says we are alive tonight\n\n"
         f"[Chorus]\n"
-        f"We catch the flare where the dark avenues rise\n"
-        f"Every window throws a signal to the sky\n"
-        f"No pause, no fade, {primary_topic} cuts clean through\n"
-        f"Right here, right now, the city turns us loose\n\n"
+        f"{primary_topic.title()} leaves a mark I recognize\n"
+        f"{image_b.capitalize()} keeps shining through the cold\n"
+        f"{concept['chorus_action'].capitalize()}\n"
+        f"I can name the cost and still keep hold\n\n"
         f"[Bridge]\n"
         f"{pick(bridge_lines, 'bridge')}\n"
         f"{topic_suffix}\n"
+        f"Song concept: {concept['premise']}; {concept['setting']}; {concept['conflict']}.\n"
+        f"{voice_directive}\n"
         f"Style anchor: {station_name} with {personality} tone.\n"
         f"Avoid verbatim repeats from recent titles: {recent_hint or 'none'}.\n"
         f"{safety}\n"
         f"\n[Final Chorus]\n"
-        f"We lift the spark past the rooftops and signs\n"
-        f"The last red light breaks open into shine\n"
-        f"No pause, no fade, let the whole block unify\n"
-        f"Right here, right now, we leave the dark behind\n\n"
+        f"{primary_topic.title()} answers back in {image_a} and {image_b}\n"
+        f"The cost is clear, the last doubt loses hold\n"
+        f"{concept['chorus_action'].capitalize()} before the fade\n"
+        f"I carry the proof into the last note\n\n"
         f"[Outro]\n"
         f"{pick(outro_lines, 'outro1')}\n"
         f"{pick(outro_lines, 'outro2')}\n"
@@ -419,12 +516,16 @@ def _build_local_prompt(
     station_profile: dict[str, Any],
     lyrics: str | None,
     chosen_topic: str,
+    song_brief: dict[str, Any] | None = None,
+    voice_profile: dict[str, Any] | None = None,
 ) -> str:
     _ = (base_prompt, genre, daypart, mood, station_profile, chosen_topic)
     return build_song_concept_prompt(
         music_caption=music_caption,
         technical_parameters=technical_parameters,
         lyrics=lyrics,
+        song_brief=song_brief,
+        voice_profile=voice_profile,
     )
 
 
@@ -708,10 +809,11 @@ def _choose_song_topic(
     if explicit_topics:
         base_pool = _dedupe_lower(explicit_topics)
     else:
+        is_nu_metal = _is_nu_metal_like(genre=genre, taste_hints=taste_hints if isinstance(taste_hints, list) else None)
         candidates.extend([_clean_topic_phrase(x) for x in _genre_topic_fallbacks(genre)])
-        if not _is_nu_metal_like(genre=genre, taste_hints=taste_hints if isinstance(taste_hints, list) else None):
+        if not is_nu_metal:
             candidates.extend([_clean_topic_phrase(x) for x in _daypart_topic_fallbacks(daypart)])
-        candidates.extend([_clean_topic_phrase(x) for x in _mood_topic_fallbacks(mood)])
+            candidates.extend([_clean_topic_phrase(x) for x in _mood_topic_fallbacks(mood)])
         base_pool = _dedupe_lower([x for x in candidates if x])
 
     fresh = [x for x in base_pool if x.lower() not in recent_keys]
@@ -1089,6 +1191,8 @@ async def _try_remote_lyrics(
     topic_ideas: list[str] | None = None,
     taste_hints: list[str] | None = None,
     lyric_constraints: dict[str, Any] | None = None,
+    voice_profile: dict[str, Any] | None = None,
+    song_brief: dict[str, Any] | None = None,
 ) -> tuple[str | None, str | None, str | None]:
     safety = "Use radio-safe language only." if clean_lyrics_only else "Avoid gratuitous explicit content."
     topic_items = [str(x).strip() for x in (topic_ideas or []) if str(x).strip()]
@@ -1097,6 +1201,16 @@ async def _try_remote_lyrics(
     chosen_topic = topic.strip() if topic.strip() else (topic_items[0] if topic_items else "night drive")
     feel_text = _derive_lyric_style_guidance(genre=genre, taste_hints=taste_hints, mood=mood)
     direction_text, avoid_text = _genre_lyric_direction(genre=genre, taste_hints=taste_hints, mood=mood)
+    fallback_concept = _build_song_concept(
+        genre=genre,
+        topic=chosen_topic,
+        daypart=str((lyric_constraints or {}).get("daypart", "")),
+        mood=mood,
+        station_description=station_description,
+    )
+    concept = _concept_from_song_brief(song_brief, fallback_concept)
+    brief_text = format_song_brief(song_brief)
+    voice_directive = format_voice_directive(voice_profile)
     system = (
         "Return strictly valid JSON with exactly two keys: title, lyrics. "
         "Use English words with ASCII characters only."
@@ -1115,7 +1229,10 @@ async def _try_remote_lyrics(
     user = (
         f"You are a {genre} song writer.\n"
         f"Write song lyrics about this exact topic: {chosen_topic}.\n"
+        f"Use this song brief as the source of the story; do not merely mention the topic:\n{brief_text or 'none'}\n"
+        f"Actual song concept: {concept['premise']}; setting: {concept['setting']}; conflict: {concept['conflict']}; image bank: {concept['images']}.\n"
         f"The song should feel like: {feel_text}.\n"
+        f"{voice_directive}\n"
         f"{direction_text}\n"
         f"{avoid_text}\n"
         f"Keep imagery and language authentic to {genre}. {constraints_block}\n"
@@ -1352,6 +1469,8 @@ async def preprocess_generation(
     base_prompt: str,
     negative_prompt: str,
     recent_tracks: list[dict[str, Any]],
+    voice_profile: dict[str, Any] | None = None,
+    recent_generations: list[dict[str, Any]] | None = None,
 ) -> PreprocessedGeneration:
     force_ascii = bool(getattr(settings, "prompt_force_ascii_english", True))
     lyrics_mode = str(station_profile.get("lyrics_mode", "mixed"))
@@ -1365,10 +1484,20 @@ async def preprocess_generation(
         recent_tracks=recent_tracks,
         salt=variation_salt,
     )
+    song_brief = build_song_brief(
+        topic=chosen_topic,
+        genre=genre,
+        mood=mood,
+        daypart=daypart,
+        station_profile=station_profile,
+        recent_generations=recent_generations or recent_tracks,
+        voice_profile=voice_profile if lyrics_mode != "instrumental_only" else None,
+        salt=variation_salt,
+    )
     suggested_title = suggest_track_title(
         genre=genre,
         mood=mood,
-        topic=chosen_topic,
+        topic=str(song_brief.get("title_seed") or chosen_topic),
         daypart=daypart,
         personality=personality,
         salt=datetime.utcnow().isoformat(),
@@ -1395,6 +1524,9 @@ async def preprocess_generation(
         mood=mood,
         daypart=daypart,
         station_profile=station_profile,
+        topic=chosen_topic,
+        song_brief=song_brief,
+        voice_profile=voice_profile if lyrics_mode != "instrumental_only" else None,
     )
 
     lyrics = _build_lyrics_draft(
@@ -1408,6 +1540,8 @@ async def preprocess_generation(
         song_topic=chosen_topic,
         variation_salt=variation_salt,
         recent_tracks=recent_tracks,
+        voice_profile=voice_profile if lyrics_mode != "instrumental_only" else None,
+        song_brief=song_brief,
     )
 
     # Dedicated lyrics generation step (OpenWebUI/Ollama) before music caption refinement.
@@ -1447,6 +1581,8 @@ async def preprocess_generation(
             topic_ideas=topic_ideas,
             taste_hints=taste_hints,
             lyric_constraints=lyric_constraints,
+            voice_profile=voice_profile if lyrics_mode != "instrumental_only" else None,
+            song_brief=song_brief,
         )
         remote_lyrics: str | None
         lyrics_base_url: str | None
@@ -1478,6 +1614,8 @@ async def preprocess_generation(
         station_profile=station_profile,
         lyrics=lyrics,
         chosen_topic=chosen_topic,
+        song_brief=song_brief,
+        voice_profile=voice_profile if lyrics_mode != "instrumental_only" else None,
     )
     if force_ascii:
         local_prompt = _sanitize_ascii_text(local_prompt, collapse_whitespace=False)
@@ -1510,6 +1648,8 @@ async def preprocess_generation(
                 "mood": mood,
                 "station_profile": station_profile,
                 "recent_tracks": recent_tracks,
+                "voice_profile": voice_profile or {},
+                "song_brief": song_brief,
             },
         )
         if remote:
@@ -1523,6 +1663,8 @@ async def preprocess_generation(
             remote.diagnostics["song_topic"] = chosen_topic
             remote.diagnostics["suggested_title"] = suggested_title
             remote.diagnostics["lyric_constraints"] = lyric_constraints
+            remote.diagnostics["voice_profile"] = voice_profile or {}
+            remote.diagnostics["song_brief"] = song_brief
             if not remote.technical_parameters:
                 remote.technical_parameters = technical_parameters
             if not remote.music_caption:
@@ -1532,6 +1674,8 @@ async def preprocess_generation(
                 music_caption=remote.music_caption,
                 technical_parameters=remote.technical_parameters,
                 lyrics=remote.lyrics,
+                song_brief=song_brief,
+                voice_profile=voice_profile if lyrics_mode != "instrumental_only" else None,
             )
             return remote
 
@@ -1547,6 +1691,8 @@ async def preprocess_generation(
             "song_topic": chosen_topic,
             "suggested_title": suggested_title,
             "lyric_constraints": lyric_constraints,
+            "voice_profile": voice_profile or {},
+            "song_brief": song_brief,
             "technical_parameters": technical_parameters,
         },
         music_caption=music_caption,

@@ -74,3 +74,31 @@ def test_negative_prompt_has_exclusions():
     neg = build_negative_prompt(genre="80s big hair rock and roll", station_profile={"lyrics_mode": "vocal_forward"})
     assert "no trap hats" in neg
     assert "avoid obvious loops" in neg
+
+
+def test_prompt_builder_includes_voice_profile_directive_and_negative_terms():
+    voice = {
+        "id": "female_gritty_rock",
+        "gender": "female",
+        "vocal_tone": "raspy, gritty rock tone",
+        "delivery": "driven belt",
+        "range_hint": "mid register",
+        "negative_prompt_terms": ["no clean boy-band tone"],
+    }
+    prompt = build_prompt(
+        genre="Rock",
+        personality="Amp Host",
+        daypart="night",
+        daypart_bias="loud",
+        mood="peak",
+        recent_tracks=[],
+        anti_repetition_notes="avoid repeats",
+        station_profile={"lyrics_mode": "vocal_forward"},
+        voice_profile=voice,
+    )
+    neg = build_negative_prompt(genre="Rock", station_profile={"lyrics_mode": "vocal_forward"}, voice_profile=voice)
+
+    assert "Vocal profile:" in prompt
+    assert "raspy, gritty rock tone" in prompt
+    assert "concrete song premise" in prompt
+    assert "no clean boy-band tone" in neg

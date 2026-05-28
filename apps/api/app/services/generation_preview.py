@@ -9,12 +9,14 @@ from app.core.settings import Settings
 from app.models.station import Station
 from app.models.track import Track
 from app.models.track_analysis import TrackAnalysis
+from app.models.track_generation import TrackGeneration
 from app.services.anti_repetition import anti_repetition_notes
 from app.services.daypart import get_daypart_blend
 from app.services.prompt_builder import build_negative_prompt, build_prompt
 from app.services.prompt_preprocessor import preprocess_generation
 from app.services.station_engine import StationEngine
 from app.services.station_profile import normalize_station_profile
+from app.services.voice_profiles import choose_voice_profile
 
 
 async def build_station_generation_preview(db: Session, station: Station, settings: Settings) -> dict[str, Any]:
@@ -24,8 +26,9 @@ async def build_station_generation_preview(db: Session, station: Station, settin
     mood = str(profile.get("mood_seed", "baseline"))
 
     recent = (
-        db.query(Track, TrackAnalysis)
+        db.query(Track, TrackAnalysis, TrackGeneration)
         .outerjoin(TrackAnalysis, Track.id == TrackAnalysis.track_id)
+        .outerjoin(TrackGeneration, TrackGeneration.track_id == Track.id)
         .filter(Track.station_id == station.id)
         .order_by(Track.created_at.desc())
         .limit(3)
@@ -33,7 +36,8 @@ async def build_station_generation_preview(db: Session, station: Station, settin
     )
 
     recent_ctx: list[dict[str, Any]] = []
-    for tr, analysis in recent:
+    recent_generations: list[dict[str, Any]] = []
+    for tr, analysis, generation in recent:
         item: dict[str, Any] = {"title": tr.title}
         if analysis:
             item.update(
@@ -43,12 +47,30 @@ async def build_station_generation_preview(db: Session, station: Station, settin
                     "tags": list((analysis.tags or {}).keys()),
                 }
             )
+        if generation and isinstance(generation.recent_context, dict):
+            pre = generation.recent_context.get("preprocessor", {})
+            diagnostics = pre.get("diagnostics", {}) if isinstance(pre, dict) else {}
+            voice = diagnostics.get("voice_profile", {}) if isinstance(diagnostics, dict) else {}
+            song_brief = diagnostics.get("song_brief", {}) if isinstance(diagnostics, dict) else {}
+            recent_generation_item: dict[str, Any] = {"diagnostics": diagnostics}
+            if isinstance(voice, dict) and str(voice.get("id") or "").strip():
+                item["voice_profile_id"] = str(voice.get("id")).strip()
+                recent_generation_item["voice_profile_id"] = item["voice_profile_id"]
+            if isinstance(song_brief, dict) and song_brief:
+                recent_generation_item["song_brief"] = song_brief
+            recent_generations.append(recent_generation_item)
         recent_ctx.append(item)
 
     anti = anti_repetition_notes(
         recent_ctx,
         cohesion_spectrum=int(profile.get("cohesion_spectrum", 80)),
         discovery_depth=int(profile.get("discovery_depth", 20)),
+    )
+    voice_profile = choose_voice_profile(
+        station.genre,
+        profile,
+        recent_generations,
+        salt=f"preview|{station.id}|{now.isoformat()}",
     )
 
     base_prompt = build_prompt(
@@ -60,8 +82,9 @@ async def build_station_generation_preview(db: Session, station: Station, settin
         recent_tracks=recent_ctx,
         anti_repetition_notes=anti,
         station_profile=profile,
+        voice_profile=voice_profile,
     )
-    base_negative_prompt = build_negative_prompt(genre=station.genre, station_profile=profile)
+    base_negative_prompt = build_negative_prompt(genre=station.genre, station_profile=profile, voice_profile=voice_profile)
 
     preprocessed = await preprocess_generation(
         settings=settings,
@@ -75,6 +98,8 @@ async def build_station_generation_preview(db: Session, station: Station, settin
         base_prompt=base_prompt,
         negative_prompt=base_negative_prompt,
         recent_tracks=recent_ctx,
+        voice_profile=voice_profile,
+        recent_generations=recent_generations,
     )
     song_topic = str((preprocessed.diagnostics or {}).get("song_topic", "")).strip() or mood
     engine = StationEngine()
@@ -102,6 +127,8 @@ async def build_station_generation_preview(db: Session, station: Station, settin
         "lyrics": preprocessed.lyrics or "",
         "music_caption": preprocessed.music_caption,
         "technical_parameters": preprocessed.technical_parameters or {},
+        "voice_profile": voice_profile,
+        "song_brief": preprocessed.diagnostics.get("song_brief", {}) if isinstance(preprocessed.diagnostics, dict) else {},
         "duration_sec": int(target_duration_sec),
         "task_type": "lyrics2music" if preprocessed.lyrics else "text2music",
         "ace_params": ace_params,
@@ -124,6 +151,8 @@ async def build_station_generation_preview(db: Session, station: Station, settin
             "prompt": preprocessed.prompt,
             "music_caption": preprocessed.music_caption,
             "technical_parameters": preprocessed.technical_parameters or {},
+            "voice_profile": voice_profile,
+            "song_brief": preprocessed.diagnostics.get("song_brief", {}) if isinstance(preprocessed.diagnostics, dict) else {},
             "negative_prompt": preprocessed.negative_prompt,
             "lyrics": preprocessed.lyrics,
         },
