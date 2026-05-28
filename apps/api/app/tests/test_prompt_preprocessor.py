@@ -192,6 +192,208 @@ async def test_preprocess_uses_dedicated_remote_lyrics_when_configured(monkeypat
     assert str(out.diagnostics.get("suggested_title")).strip() != ""
 
 
+@pytest.mark.asyncio
+async def test_preprocess_stores_failed_remote_quality_and_keeps_final_quality(monkeypatch):
+    class LyricsSettings(DummySettings):
+        lyrics_refiner_base_urls = "http://openwebui.local"
+        lyrics_refiner_model = "qwen2.5"
+
+    async def fake_remote_lyrics(**kwargs: object):
+        if kwargs.get("quality_reasons"):
+            return None, None, None
+        return (
+            "[VERSE 1]\n"
+            "We rise through the night under city lights\n"
+            "We shine and feel alive right here right now\n\n"
+            "[CHORUS]\n"
+            "We rise through the night under city lights\n"
+            "We rise through the night under city lights\n",
+            "http://openwebui.local",
+            "Generic Draft",
+        )
+
+    monkeypatch.setattr(pp, "_try_remote_lyrics", fake_remote_lyrics)
+
+    out = await preprocess_generation(
+        settings=LyricsSettings(),
+        station_name="Neon Harbor",
+        station_description="Retro city pulse and chrome midnight air.",
+        genre="Synthwave",
+        personality="Velvet Static",
+        daypart="evening",
+        mood="rise",
+        station_profile={"lyrics_mode": "vocal_forward", "topic_ideas": ["arcade goodbye"]},
+        base_prompt="Generate a full, radio-ready Synthwave track.",
+        negative_prompt="avoid clipping",
+        recent_tracks=[],
+    )
+
+    initial_quality = out.diagnostics["remote_initial_quality"]
+    final_quality = out.diagnostics["lyric_quality"]
+    assert initial_quality["passed"] is False
+    assert "generic_filler_phrases" in initial_quality["reasons"]
+    assert final_quality["passed"] is True
+    assert final_quality != initial_quality
+    assert out.diagnostics["remote_initial_title"] == "Generic Draft"
+    assert out.diagnostics["remote_initial_source"] == "openwebui:http://openwebui.local"
+    assert len(out.diagnostics["remote_initial_excerpt"].splitlines()) <= 8
+    assert out.diagnostics["lyrics_source"].endswith(":strict_local_fallback")
+
+
+@pytest.mark.asyncio
+async def test_preprocess_stores_repair_quality_as_final_when_accepted(monkeypatch):
+    class LyricsSettings(DummySettings):
+        lyrics_refiner_base_urls = "http://openwebui.local"
+        lyrics_refiner_model = "qwen2.5"
+
+    async def fake_remote_lyrics(**kwargs: object):
+        if kwargs.get("quality_reasons"):
+            brief = kwargs.get("song_brief") if isinstance(kwargs.get("song_brief"), dict) else {}
+            repaired = pp._strict_local_lyrics_from_brief(
+                song_brief=brief,
+                genre=str(kwargs.get("genre") or ""),
+                voice_profile=None,
+            )
+            return repaired, "http://openwebui.local", "Repair Draft"
+        return (
+            "[VERSE 1]\n"
+            "City lights keep the signal strong\n\n"
+            "[CHORUS]\n"
+            "City lights keep the signal strong\n"
+            "City lights keep the signal strong\n",
+            "http://openwebui.local",
+            "Weak Draft",
+        )
+
+    monkeypatch.setattr(pp, "_try_remote_lyrics", fake_remote_lyrics)
+
+    out = await preprocess_generation(
+        settings=LyricsSettings(),
+        station_name="Neon Harbor",
+        station_description="Retro city pulse and chrome midnight air.",
+        genre="Synthwave",
+        personality="Velvet Static",
+        daypart="evening",
+        mood="rise",
+        station_profile={"lyrics_mode": "vocal_forward", "topic_ideas": ["arcade goodbye"]},
+        base_prompt="Generate a full, radio-ready Synthwave track.",
+        negative_prompt="avoid clipping",
+        recent_tracks=[],
+    )
+
+    assert out.diagnostics["remote_initial_quality"]["passed"] is False
+    assert out.diagnostics["remote_repair_quality"]["passed"] is True
+    assert out.diagnostics["remote_repair_title"] == "Repair Draft"
+    assert out.diagnostics["remote_repair_source"] == "openwebui:http://openwebui.local"
+    assert out.diagnostics["lyric_quality"] == out.diagnostics["remote_repair_quality"]
+    assert out.diagnostics["lyrics_source"] == "openwebui:http://openwebui.local:quality_repair"
+
+
+@pytest.mark.asyncio
+async def test_preprocess_stores_remote_empty_lyrics_error(monkeypatch):
+    class LyricsSettings(DummySettings):
+        lyrics_refiner_base_urls = "http://openwebui.local"
+        lyrics_refiner_model = "qwen2.5"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/api/chat/completions"):
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"content": json.dumps({"title": "No Words", "lyrics": ""})}}
+                    ]
+                },
+            )
+        return httpx.Response(200, json={})
+
+    transport = httpx.MockTransport(handler)
+
+    class Client(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(pp.httpx, "AsyncClient", Client)
+
+    out = await preprocess_generation(
+        settings=LyricsSettings(),
+        station_name="Neon Harbor",
+        station_description="Retro city pulse and chrome midnight air.",
+        genre="Synthwave",
+        personality="Velvet Static",
+        daypart="evening",
+        mood="rise",
+        station_profile={"lyrics_mode": "vocal_forward", "topic_ideas": ["arcade goodbye"]},
+        base_prompt="Generate a full, radio-ready Synthwave track.",
+        negative_prompt="avoid clipping",
+        recent_tracks=[],
+    )
+
+    assert out.diagnostics["remote_initial_error"] == "empty_lyrics"
+    assert "Traceback" not in out.diagnostics["remote_initial_error"]
+
+
+@pytest.mark.asyncio
+async def test_preprocess_sets_remote_initial_parse_shape_for_list_payload(monkeypatch):
+    class LyricsSettings(DummySettings):
+        lyrics_refiner_base_urls = "http://openwebui.local"
+        lyrics_refiner_model = "tinyllama:latest"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/api/chat/completions"):
+            content = json.dumps(
+                {
+                    "title": "Tiny List",
+                    "lyrics": [
+                        {"type": "lyric", "text": "[INTRO]"},
+                        {"type": "chord", "text": "G#m"},
+                        {"type": "verse", "text": "Glass on the stairwell catches my sleeve"},
+                        {"type": "chorus", "text": "[CHORUS]\nThe exit sign knows what I carried"},
+                        {"type": "outro", "text": "[OUTRO]\nThe doorway keeps the last word"},
+                    ],
+                }
+            )
+            return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+        if request.url.path.endswith("/api/v1/chats/new"):
+            return httpx.Response(200, json={"id": "chat-123"})
+        if request.url.path.endswith("/api/v1/chats/chat-123"):
+            return httpx.Response(200, json={"ok": True})
+        return httpx.Response(404, json={})
+
+    transport = httpx.MockTransport(handler)
+
+    class Client(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(pp.httpx, "AsyncClient", Client)
+
+    out = await preprocess_generation(
+        settings=LyricsSettings(),
+        station_name="Neon Harbor",
+        station_description="Retro city pulse and chrome midnight air.",
+        genre="Synthwave",
+        personality="Velvet Static",
+        daypart="evening",
+        mood="rise",
+        station_profile={"lyrics_mode": "vocal_forward", "topic_ideas": ["arcade goodbye"]},
+        base_prompt="Generate a full, radio-ready Synthwave track.",
+        negative_prompt="avoid clipping",
+        recent_tracks=[],
+    )
+
+    assert out.diagnostics["remote_initial_parse_shape"] == "list_text_objects"
+    assert "remote_initial_error" not in out.diagnostics
+
+
+def test_compact_lyric_excerpt_bounds_lines():
+    lyrics = "\n".join(f"line {idx}" for idx in range(20))
+    excerpt = pp.compact_lyric_excerpt(lyrics, max_lines=5)
+    assert excerpt.splitlines() == ["line 0", "line 1", "line 2", "line 3", "line 4"]
+
+
 def test_finalize_lyrics_for_generator_strips_meta_and_formats_sections():
     sample = (
         "[Intro]\nNeon hum\n\n"
@@ -232,6 +434,165 @@ def test_extract_title_and_lyrics_supports_section_object_json():
     assert "[INTRO]\nGlass walls" in lyrics
     assert "[VERSE 1]\nWires wrap tight" in lyrics
     assert "[FINAL CHORUS]\nEndless night" in lyrics
+
+
+def test_extract_title_and_lyrics_supports_tinyllama_list_object_json():
+    sample = json.dumps(
+        {
+            "title": "Test",
+            "lyrics": [
+                {"type": "lyric", "text": "[INTRO]"},
+                {"type": "chord", "text": "G#m"},
+                {"type": "verse", "text": "Glass on the stairwell catches my sleeve"},
+                {"type": "metadata", "text": "tempo 120"},
+                {"type": "chorus", "text": "[CHORUS]\nThe exit sign knows what I carried"},
+                {"type": "bridge", "text": "Keys on the counter make the verdict plain"},
+            ],
+        }
+    )
+
+    title, lyrics, shape = pp._extract_title_lyrics_and_shape(sample)
+
+    assert title == "Test"
+    assert shape == "list_text_objects"
+    assert "[INTRO]" in lyrics
+    assert "Glass on the stairwell catches my sleeve" in lyrics
+    assert "[CHORUS]" in lyrics
+    assert "Keys on the counter make the verdict plain" in lyrics
+    assert "G#m" not in lyrics
+    assert "tempo 120" not in lyrics
+
+
+def test_extract_title_and_lyrics_supports_list_strings():
+    sample = json.dumps(
+        {
+            "title": "String List",
+            "lyrics": [
+                "[INTRO]",
+                "Neon reflects across the receipt",
+                "F#m",
+                "[OUTRO]",
+                "The doorway keeps the last word",
+            ],
+        }
+    )
+
+    title, lyrics, shape = pp._extract_title_lyrics_and_shape(sample)
+
+    assert title == "String List"
+    assert shape == "list_strings"
+    assert "Neon reflects across the receipt" in lyrics
+    assert "The doorway keeps the last word" in lyrics
+    assert "F#m" not in lyrics
+
+
+@pytest.mark.asyncio
+async def test_remote_lyrics_records_list_parse_shape_without_request_failed(monkeypatch):
+    diagnostics: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/api/chat/completions"):
+            content = json.dumps(
+                {
+                    "title": "Tiny List",
+                    "lyrics": [
+                        {"type": "lyric", "text": "[INTRO]"},
+                        {"type": "chord", "text": "G#m"},
+                        {"type": "verse", "text": "Glass on the stairwell catches my sleeve"},
+                        {"type": "chorus", "text": "[CHORUS]\nThe exit sign knows what I carried"},
+                        {"type": "outro", "text": "[OUTRO]\nThe doorway keeps the last word"},
+                    ],
+                }
+            )
+            return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+        if request.url.path.endswith("/api/v1/chats/new"):
+            return httpx.Response(200, json={"id": "chat-123"})
+        if request.url.path.endswith("/api/v1/chats/chat-123"):
+            return httpx.Response(200, json={"ok": True})
+        return httpx.Response(404, json={})
+
+    transport = httpx.MockTransport(handler)
+
+    class Client(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(pp.httpx, "AsyncClient", Client)
+
+    lyrics, source, title = await pp._try_remote_lyrics(
+        base_urls=["http://openwebui.local"],
+        model="tinyllama:latest",
+        api_key=None,
+        auth_email=None,
+        auth_password=None,
+        timeout_seconds=5,
+        temperature=0.7,
+        genre="Synthwave",
+        title="Tiny List",
+        mood="rise",
+        topic="arcade goodbye",
+        clean_lyrics_only=True,
+        station_name="Neon Harbor",
+        station_description="retro glow",
+        personality="Velvet Static",
+        recent_tracks=[],
+        variation_salt="tinylist",
+        diagnostics=diagnostics,
+    )
+
+    assert title == "Tiny List"
+    assert source == "http://openwebui.local"
+    assert lyrics is not None
+    assert "Glass on the stairwell catches my sleeve" in lyrics
+    assert "G#m" not in lyrics
+    assert diagnostics["parse_shape"] == "list_text_objects"
+    assert not str(diagnostics.get("error", "")).startswith("request_failed")
+
+
+@pytest.mark.asyncio
+async def test_remote_lyrics_request_failure_includes_http_status(monkeypatch):
+    diagnostics: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/api/chat/completions"):
+            return httpx.Response(400, json={"detail": "bad request"})
+        return httpx.Response(404, json={})
+
+    transport = httpx.MockTransport(handler)
+
+    class Client(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(pp.httpx, "AsyncClient", Client)
+
+    lyrics, source, title = await pp._try_remote_lyrics(
+        base_urls=["http://openwebui.local"],
+        model="tinyllama:latest",
+        api_key=None,
+        auth_email=None,
+        auth_password=None,
+        timeout_seconds=5,
+        temperature=0.7,
+        genre="Synthwave",
+        title="Tiny List",
+        mood="rise",
+        topic="arcade goodbye",
+        clean_lyrics_only=True,
+        station_name="Neon Harbor",
+        station_description="retro glow",
+        personality="Velvet Static",
+        recent_tracks=[],
+        variation_salt="tinylist",
+        diagnostics=diagnostics,
+    )
+
+    assert lyrics is None
+    assert source is None
+    assert title is None
+    assert diagnostics["error"] == "request_failed:400"
 
 
 def test_finalize_lyrics_for_generator_strips_production_terms():

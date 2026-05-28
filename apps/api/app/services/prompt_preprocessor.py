@@ -161,6 +161,21 @@ def _finalize_lyrics_for_generator(lyrics: str | None) -> str | None:
     return text or None
 
 
+def compact_lyric_excerpt(lyrics: str | None, max_lines: int = 8) -> str:
+    limit = max(0, int(max_lines))
+    if limit == 0:
+        return ""
+    lines = []
+    for raw in (lyrics or "").splitlines():
+        line = " ".join(raw.strip().split())
+        if not line:
+            continue
+        lines.append(line[:220])
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
+
+
 def _lyrics_is_too_templatey(lyrics: str | None) -> bool:
     text = (lyrics or "").strip()
     if not text:
@@ -1028,10 +1043,90 @@ def _strip_code_fence(text: str) -> str:
     return cleaned
 
 
-def _extract_title_and_lyrics(text: str) -> tuple[str | None, str]:
+_REMOTE_LYRIC_LIST_TYPES = {
+    "lyric",
+    "lyrics",
+    "line",
+    "verse",
+    "chorus",
+    "bridge",
+    "pre-chorus",
+    "prechorus",
+    "intro",
+    "outro",
+    "final chorus",
+    "final_chorus",
+}
+
+
+def _looks_like_chord_token(value: str) -> bool:
+    text = value.strip()
+    return bool(re.match(r"^[A-G](?:#|b)?m?(?:maj|min|dim|aug|sus|add)?\d*(?:/[A-G](?:#|b)?)?$", text))
+
+
+def _lyrics_payload_to_text(raw_lyrics: Any) -> tuple[str, str]:
+    if isinstance(raw_lyrics, str):
+        return raw_lyrics.strip(), "string"
+    if isinstance(raw_lyrics, dict):
+        ordered_sections = [
+            "[INTRO]",
+            "[VERSE 1]",
+            "[PRE-CHORUS]",
+            "[CHORUS]",
+            "[VERSE 2]",
+            "[PRE-CHORUS 2]",
+            "[CHORUS 2]",
+            "[BRIDGE]",
+            "[FINAL CHORUS]",
+            "[OUTRO]",
+        ]
+        blocks: list[str] = []
+        consumed: set[str] = set()
+        for section in ordered_sections:
+            for key, value in raw_lyrics.items():
+                normalized_key = str(key).strip().upper()
+                target_key = section.upper()
+                if normalized_key in {"[PRE-CHORUS 2]", "[PRE-CHORUS TWO]"}:
+                    normalized_key = "[PRE-CHORUS]"
+                if normalized_key in {"[CHORUS 2]", "[CHORUS TWO]"}:
+                    normalized_key = "[CHORUS]"
+                if normalized_key != target_key or normalized_key in consumed:
+                    continue
+                line_text = str(value).strip()
+                if line_text:
+                    blocks.append(f"{target_key}\n{line_text}")
+                    consumed.add(normalized_key)
+                    break
+        if not blocks:
+            for key, value in raw_lyrics.items():
+                normalized_key = str(key).strip().upper()
+                line_text = str(value).strip()
+                if normalized_key and line_text:
+                    blocks.append(f"{normalized_key}\n{line_text}")
+        return "\n\n".join(blocks).strip(), "dict"
+    if isinstance(raw_lyrics, list):
+        if all(isinstance(item, str) for item in raw_lyrics):
+            lines = [str(item).strip() for item in raw_lyrics if str(item).strip() and not _looks_like_chord_token(str(item))]
+            return "\n".join(lines).strip(), "list_strings"
+        if all(isinstance(item, dict) for item in raw_lyrics):
+            lines = []
+            for item in raw_lyrics:
+                kind = str(item.get("type", "") or item.get("section", "") or "").strip().lower()
+                line_text = str(item.get("text", "")).strip()
+                if not line_text or kind not in _REMOTE_LYRIC_LIST_TYPES:
+                    continue
+                if kind in {"chord", "metadata", "meta", "key", "tempo"} or _looks_like_chord_token(line_text):
+                    continue
+                lines.append(line_text)
+            return "\n".join(lines).strip(), "list_text_objects"
+        return "", "unknown"
+    return "", "unknown"
+
+
+def _extract_title_lyrics_and_shape(text: str) -> tuple[str | None, str, str]:
     cleaned = _strip_code_fence(text or "")
     if not cleaned:
-        return None, ""
+        return None, "", "unknown"
 
     # JSON path: {"title":"...","lyrics":"..."}
     try:
@@ -1040,48 +1135,8 @@ def _extract_title_and_lyrics(text: str) -> tuple[str | None, str]:
         payload = None
     if isinstance(payload, dict):
         title = str(payload.get("title", "")).strip() or None
-        raw_lyrics = payload.get("lyrics", "")
-        if isinstance(raw_lyrics, dict):
-            ordered_sections = [
-                "[INTRO]",
-                "[VERSE 1]",
-                "[PRE-CHORUS]",
-                "[CHORUS]",
-                "[VERSE 2]",
-                "[PRE-CHORUS 2]",
-                "[CHORUS 2]",
-                "[BRIDGE]",
-                "[FINAL CHORUS]",
-                "[OUTRO]",
-            ]
-            blocks: list[str] = []
-            consumed: set[str] = set()
-            for section in ordered_sections:
-                for key, value in raw_lyrics.items():
-                    normalized_key = str(key).strip().upper()
-                    target_key = section.upper()
-                    if normalized_key in {"[PRE-CHORUS 2]", "[PRE-CHORUS TWO]"}:
-                        normalized_key = "[PRE-CHORUS]"
-                    if normalized_key in {"[CHORUS 2]", "[CHORUS TWO]"}:
-                        normalized_key = "[CHORUS]"
-                    if normalized_key != target_key or normalized_key in consumed:
-                        continue
-                    line_text = str(value).strip()
-                    if line_text:
-                        blocks.append(f"{target_key}\n{line_text}")
-                        consumed.add(normalized_key)
-                        break
-            if not blocks:
-                for key, value in raw_lyrics.items():
-                    normalized_key = str(key).strip().upper()
-                    line_text = str(value).strip()
-                    if normalized_key and line_text:
-                        blocks.append(f"{normalized_key}\n{line_text}")
-            lyrics = "\n\n".join(blocks).strip()
-        else:
-            lyrics = str(raw_lyrics).strip()
-        if lyrics:
-            return title, lyrics
+        lyrics, shape = _lyrics_payload_to_text(payload.get("lyrics", ""))
+        return title, lyrics, shape
 
     # Plain-text path: first line starts with "Title:".
     lines = [ln.rstrip() for ln in cleaned.splitlines()]
@@ -1090,9 +1145,14 @@ def _extract_title_and_lyrics(text: str) -> tuple[str | None, str]:
         if m:
             title = m.group(1).strip() or None
             lyrics = "\n".join(lines[1:]).strip()
-            return title, lyrics
+            return title, lyrics, "string"
 
-    return None, cleaned
+    return None, cleaned, "string"
+
+
+def _extract_title_and_lyrics(text: str) -> tuple[str | None, str]:
+    title, lyrics, _shape = _extract_title_lyrics_and_shape(text)
+    return title, lyrics
 
 
 def _derive_lyric_style_guidance(*, genre: str, taste_hints: list[str] | None, mood: str) -> str:
@@ -1397,7 +1457,16 @@ async def _try_remote_lyrics(
     song_brief: dict[str, Any] | None = None,
     quality_reasons: list[str] | None = None,
     previous_lyrics: str | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> tuple[str | None, str | None, str | None]:
+    def note_error(reason: str) -> None:
+        if diagnostics is not None and not diagnostics.get("error"):
+            diagnostics["error"] = reason
+
+    def note_parse_shape(shape: str) -> None:
+        if diagnostics is not None:
+            diagnostics["parse_shape"] = shape
+
     safety = "Use radio-safe language only." if clean_lyrics_only else "Avoid gratuitous explicit content."
     topic_items = [str(x).strip() for x in (topic_ideas or []) if str(x).strip()]
     if topic.strip() and topic not in topic_items:
@@ -1489,15 +1558,32 @@ async def _try_remote_lyrics(
                     data = resp.json()
                     content = _extract_chat_content(data)
                     if not content:
+                        note_error("empty_response")
                         continue
-                    parsed_title, parsed_lyrics = _extract_title_and_lyrics(content)
+                    stripped_content = _strip_code_fence(content).strip()
+                    if stripped_content.startswith("{"):
+                        try:
+                            parsed_payload = json.loads(stripped_content)
+                        except Exception:
+                            note_error("unparseable_lyrics")
+                            continue
+                        if not isinstance(parsed_payload, dict):
+                            note_error("unparseable_lyrics")
+                            continue
+                    parsed_title, parsed_lyrics, parse_shape = _extract_title_lyrics_and_shape(content)
+                    note_parse_shape(parse_shape)
+                    if parse_shape == "unknown":
+                        note_error("unparseable_lyrics")
+                        continue
                     text = parsed_lyrics
                     if not text:
+                        note_error("empty_lyrics")
                         continue
                     variation_key = variation_salt.strip().lower()
                     if variation_key and (
                         variation_key in text.lower() or variation_key in str(parsed_title or "").lower()
                     ):
+                        note_error("variation_token_leak")
                         continue
                     # Keep the first non-empty remote response as a fallback candidate.
                     # This ensures we only fall back to local-template on true remote failures.
@@ -1522,7 +1608,17 @@ async def _try_remote_lyrics(
                     except Exception:
                         pass
                     return text, base_url, parsed_title
-        except Exception:
+        except httpx.HTTPStatusError as exc:
+            note_error(f"request_failed:{exc.response.status_code}")
+            continue
+        except httpx.TimeoutException:
+            note_error("request_failed:timeout")
+            continue
+        except httpx.HTTPError as exc:
+            note_error(f"request_failed:{exc.__class__.__name__.lower()}")
+            continue
+        except Exception as exc:
+            note_error(f"request_failed:{exc.__class__.__name__.lower()}")
             continue
     if fallback_text:
         try:
@@ -1546,6 +1642,7 @@ async def _try_remote_lyrics(
         except Exception:
             pass
         return fallback_text, fallback_source, fallback_title
+    note_error("no_remote_lyrics")
     return None, None, None
 
 
@@ -1652,6 +1749,35 @@ async def _signin_openwebui_token(
     return None
 
 
+def _unpack_remote_lyrics_result(remote_result: Any) -> tuple[str | None, str | None, str | None]:
+    if isinstance(remote_result, tuple) and len(remote_result) == 3:
+        remote_lyrics, remote_source, remote_title = remote_result
+    elif isinstance(remote_result, tuple) and len(remote_result) == 2:
+        remote_lyrics, remote_source = remote_result
+        remote_title = None
+    else:
+        remote_lyrics, remote_source, remote_title = None, None, None
+    return remote_lyrics, remote_source, remote_title
+
+
+def _remote_source_label(source: str | None) -> str:
+    cleaned = str(source or "").strip()
+    return f"openwebui:{cleaned}" if cleaned else "openwebui:unknown"
+
+
+async def _call_remote_lyrics_with_diagnostics(
+    *,
+    diagnostics: dict[str, Any],
+    **kwargs: Any,
+) -> tuple[str | None, str | None, str | None]:
+    try:
+        return await _try_remote_lyrics(**kwargs, diagnostics=diagnostics)
+    except TypeError as exc:
+        if "diagnostics" not in str(exc):
+            raise
+        return await _try_remote_lyrics(**kwargs)
+
+
 async def preprocess_generation(
     *,
     settings: Any,
@@ -1753,12 +1879,39 @@ async def preprocess_generation(
     lyrics_urls = [x.strip() for x in lyrics_urls_raw.split(",") if x.strip()]
     quality_repair_attempted = False
     quality_repair_success = False
+    remote_lyric_diagnostics: dict[str, Any] = {}
+
+    def finalized_remote_candidate(raw_lyrics: str | None) -> str | None:
+        candidate = raw_lyrics
+        if force_ascii:
+            candidate = _sanitize_ascii_text(candidate or "") or None
+        return _finalize_lyrics_for_generator(candidate)
+
+    def store_remote_candidate_diagnostics(
+        *,
+        prefix: str,
+        raw_lyrics: str | None,
+        source: str | None,
+        title: str | None,
+    ) -> None:
+        finalized = finalized_remote_candidate(raw_lyrics)
+        remote_lyric_diagnostics[f"{prefix}_quality"] = evaluate_lyrics_quality(
+            lyrics=finalized,
+            song_brief=song_brief,
+            voice_profile=voice_profile,
+            recent_generations=recent_generations,
+        )
+        remote_lyric_diagnostics[f"{prefix}_excerpt"] = compact_lyric_excerpt(finalized)
+        remote_lyric_diagnostics[f"{prefix}_title"] = " ".join(str(title or "").split())[:80]
+        remote_lyric_diagnostics[f"{prefix}_source"] = _remote_source_label(source)
 
     if lyrics_mode != "instrumental_only" and lyrics_model and lyrics_urls:
         title = _suggest_song_title(station_name=station_name, topic=chosen_topic, daypart=daypart)
         topic_ideas = [str(x).strip() for x in (station_profile.get("topic_ideas", []) or []) if str(x).strip()]
         taste_hints = [str(x).strip() for x in (station_profile.get("taste_hints", []) or []) if str(x).strip()]
-        remote_result = await _try_remote_lyrics(
+        initial_remote_call_diagnostics: dict[str, Any] = {}
+        remote_result = await _call_remote_lyrics_with_diagnostics(
+            diagnostics=initial_remote_call_diagnostics,
             base_urls=lyrics_urls,
             model=lyrics_model,
             api_key=lyrics_api_key,
@@ -1782,21 +1935,25 @@ async def preprocess_generation(
             voice_profile=voice_profile if lyrics_mode != "instrumental_only" else None,
             song_brief=song_brief,
         )
-        remote_lyrics: str | None
-        lyrics_base_url: str | None
-        remote_title: str | None
-        if isinstance(remote_result, tuple) and len(remote_result) == 3:
-            remote_lyrics, lyrics_base_url, remote_title = remote_result
-        elif isinstance(remote_result, tuple) and len(remote_result) == 2:
-            remote_lyrics, lyrics_base_url = remote_result
-            remote_title = None
-        else:
-            remote_lyrics, lyrics_base_url, remote_title = None, None, None
+        remote_lyrics, lyrics_base_url, remote_title = _unpack_remote_lyrics_result(remote_result)
+        remote_lyric_diagnostics["remote_initial_parse_shape"] = str(
+            initial_remote_call_diagnostics.get("parse_shape") or ("string" if remote_lyrics else "unknown")
+        )
         if remote_lyrics:
+            store_remote_candidate_diagnostics(
+                prefix="remote_initial",
+                raw_lyrics=remote_lyrics,
+                source=lyrics_base_url,
+                title=remote_title,
+            )
             lyrics = remote_lyrics
-            lyrics_source = f"openwebui:{lyrics_base_url}"
+            lyrics_source = _remote_source_label(lyrics_base_url)
             if remote_title:
                 suggested_title = " ".join(str(remote_title).split())[:80] or suggested_title
+        else:
+            remote_lyric_diagnostics["remote_initial_error"] = str(
+                initial_remote_call_diagnostics.get("error") or "empty_lyrics"
+            )[:80]
 
     if force_ascii:
         negative_prompt = _sanitize_ascii_text(negative_prompt, collapse_whitespace=True)
@@ -1818,7 +1975,9 @@ async def preprocess_generation(
         if not bool(lyric_quality.get("passed")) and lyrics_model and lyrics_urls:
             quality_repair_attempted = True
             repair_salt = f"{variation_salt}-repair"
-            remote_result = await _try_remote_lyrics(
+            repair_remote_call_diagnostics: dict[str, Any] = {}
+            remote_result = await _call_remote_lyrics_with_diagnostics(
+                diagnostics=repair_remote_call_diagnostics,
                 base_urls=lyrics_urls,
                 model=lyrics_model,
                 api_key=lyrics_api_key,
@@ -1851,17 +2010,17 @@ async def preprocess_generation(
                 quality_reasons=[str(x) for x in lyric_quality.get("reasons", [])],
                 previous_lyrics=lyrics,
             )
-            repair_lyrics: str | None
-            repair_source: str | None
-            repair_title: str | None
-            if isinstance(remote_result, tuple) and len(remote_result) == 3:
-                repair_lyrics, repair_source, repair_title = remote_result
-            elif isinstance(remote_result, tuple) and len(remote_result) == 2:
-                repair_lyrics, repair_source = remote_result
-                repair_title = None
-            else:
-                repair_lyrics, repair_source, repair_title = None, None, None
+            repair_lyrics, repair_source, repair_title = _unpack_remote_lyrics_result(remote_result)
+            remote_lyric_diagnostics["remote_repair_parse_shape"] = str(
+                repair_remote_call_diagnostics.get("parse_shape") or ("string" if repair_lyrics else "unknown")
+            )
             if repair_lyrics:
+                store_remote_candidate_diagnostics(
+                    prefix="remote_repair",
+                    raw_lyrics=repair_lyrics,
+                    source=repair_source,
+                    title=repair_title,
+                )
                 if force_ascii:
                     repair_lyrics = _sanitize_ascii_text(repair_lyrics or "") or None
                 repaired = _finalize_lyrics_for_generator(repair_lyrics)
@@ -1874,10 +2033,14 @@ async def preprocess_generation(
                 if bool(repair_quality.get("passed")):
                     lyrics = repaired
                     lyric_quality = repair_quality
-                    lyrics_source = f"openwebui:{repair_source}:quality_repair"
+                    lyrics_source = f"{_remote_source_label(repair_source)}:quality_repair"
                     quality_repair_success = True
                     if repair_title:
                         suggested_title = " ".join(str(repair_title).split())[:80] or suggested_title
+            else:
+                remote_lyric_diagnostics["remote_repair_error"] = str(
+                    repair_remote_call_diagnostics.get("error") or "empty_lyrics"
+                )[:80]
         if not bool(lyric_quality.get("passed")):
             lyrics = _finalize_lyrics_for_generator(
                 _strict_local_lyrics_from_brief(
@@ -1955,6 +2118,7 @@ async def preprocess_generation(
             remote.diagnostics["voice_profile"] = voice_profile or {}
             remote.diagnostics["song_brief"] = song_brief
             remote.diagnostics["lyric_quality"] = lyric_quality
+            remote.diagnostics.update(remote_lyric_diagnostics)
             remote.diagnostics["remote_prompt_version"] = _REMOTE_LYRIC_PROMPT_VERSION
             remote.diagnostics["quality_repair_attempted"] = quality_repair_attempted
             remote.diagnostics["quality_repair_success"] = quality_repair_success
@@ -1987,6 +2151,7 @@ async def preprocess_generation(
             "voice_profile": voice_profile or {},
             "song_brief": song_brief,
             "lyric_quality": lyric_quality,
+            **remote_lyric_diagnostics,
             "remote_prompt_version": _REMOTE_LYRIC_PROMPT_VERSION,
             "quality_repair_attempted": quality_repair_attempted,
             "quality_repair_success": quality_repair_success,
