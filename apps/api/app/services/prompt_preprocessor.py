@@ -77,6 +77,18 @@ _NON_LYRIC_TOPIC_HINTS = {
     "metal",
     "industrial",
 }
+_REMOTE_LYRIC_PROMPT_VERSION = "cinematic-brief-v2"
+_REMOTE_BANNED_FILLER_PHRASES = [
+    "we rise",
+    "feel alive",
+    "through the night",
+    "city lights",
+    "signal strong",
+    "hands up",
+    "never let go",
+    "we own the night",
+    "right here right now",
+]
 
 
 @dataclass
@@ -1227,6 +1239,138 @@ def _build_lyric_constraints(
     }
 
 
+def _remote_lyric_system_prompt() -> str:
+    banned = ", ".join(f'"{phrase}"' for phrase in _REMOTE_BANNED_FILLER_PHRASES)
+    return (
+        f"Remote lyric prompt version: {_REMOTE_LYRIC_PROMPT_VERSION}.\n"
+        "You are a professional songwriter writing record-ready lyrics, not an AI assistant and not a generic lyric generator.\n"
+        "Write scenes: physical places, visible objects, actions, tension, consequence, and sensory details.\n"
+        "Imply emotion through behavior and image; do not explain feelings with abstract statements.\n"
+        "Every section must advance the same story from the song brief.\n"
+        "Return strictly valid JSON with exactly two keys: title, lyrics. Use English words with ASCII characters only.\n"
+        "NEGATIVE INSTRUCTIONS: forbid motivational filler, generic EDM slogans, crowd-hype commands, and empty uplift language. "
+        f"Do not write these phrases or close variants: {banned}.\n"
+        "BAD lyric examples:\n"
+        "We rise through the night, hands up, feel alive\n"
+        "City lights keep the signal strong and we never let go\n"
+        "GOOD lyric examples:\n"
+        "Paper wristband sticks to the payphone glass\n"
+        "She leaves the keys under a blue exit light\n"
+        "The chorus pays off the scene with one memorable repeated phrase, never a hype slogan."
+    )
+
+
+def _quality_repair_block(
+    *,
+    quality_reasons: list[str] | None,
+    previous_lyrics: str | None,
+) -> str:
+    reasons = [str(x).strip() for x in (quality_reasons or []) if str(x).strip()]
+    if not reasons:
+        return ""
+    reason_text = ", ".join(reasons)
+    directives = {
+        "repeated_chorus_lines": "Change the chorus payoff across repeats; keep a memorable phrase but do not duplicate full chorus lines.",
+        "repeated_full_lines": "Do not reuse full lines between sections except one short hook phrase.",
+        "generic_filler_phrases": "Remove all banned filler and replace slogans with objects, actions, and consequence.",
+        "meta_prompt_leakage": "Do not mention prompts, concepts, profiles, instructions, or songwriting terminology inside the lyrics.",
+        "song_brief_underused": "Use the narrator, setting, conflict, hook concept, and imagery from the song brief in visible lyric details.",
+        "too_abstract_not_enough_imagery": "Replace abstract emotion words with concrete objects, physical places, and sensory details.",
+        "too_similar_to_recent_lyrics": "Change line shapes, chorus phrasing, title image, and section openings from recent drafts.",
+        "empty_lyrics": "Write a complete lyric with the required section labels.",
+    }
+    targeted = "\n".join(f"- {directives.get(reason, 'Correct this failed quality category with more concrete story detail.')}" for reason in reasons)
+    previous_excerpt = "\n".join((previous_lyrics or "").splitlines()[:18]).strip()
+    if previous_excerpt:
+        previous_excerpt = f"\nPrevious weak draft excerpt to avoid copying:\n{previous_excerpt}"
+    return (
+        "\nQUALITY REPAIR PASS:\n"
+        f"The previous lyric failed these quality categories: {reason_text}.\n"
+        "Explicitly avoid the previous weaknesses:\n"
+        f"{targeted}"
+        f"{previous_excerpt}\n"
+    )
+
+
+def _build_remote_lyric_user_prompt(
+    *,
+    genre: str,
+    chosen_topic: str,
+    mood: str,
+    station_name: str,
+    station_description: str,
+    personality: str,
+    recent_tracks: list[dict[str, Any]],
+    variation_salt: str,
+    safety: str,
+    feel_text: str,
+    direction_text: str,
+    avoid_text: str,
+    concept: dict[str, str],
+    brief_text: str,
+    voice_directive: str,
+    constraints_block: str,
+    quality_reasons: list[str] | None = None,
+    previous_lyrics: str | None = None,
+) -> str:
+    recent_titles = ", ".join(
+        [str(x.get("title", "")).strip() for x in (recent_tracks or []) if str(x.get("title", "")).strip()][:5]
+    ) or "none"
+    banned = ", ".join(_REMOTE_BANNED_FILLER_PHRASES)
+    return (
+        f"Station: {station_name}. Personality: {personality}. Description: {station_description}\n"
+        f"Genre: {genre}. Mood: {mood}. Exact topic: {chosen_topic}.\n"
+        "Write as a songwriter building a short film in lyric form.\n\n"
+        "SONG BRIEF FIELDS TO USE STRONGLY:\n"
+        f"{brief_text or 'No structured brief supplied.'}\n\n"
+        "STORY SOURCE:\n"
+        f"Premise: {concept['premise']}\n"
+        f"Physical setting: {concept['setting']}\n"
+        f"Conflict: {concept['conflict']}\n"
+        f"Imagery bank: {concept['images']}\n"
+        f"Hook concept / chorus action: {concept['chorus_action']}\n\n"
+        "VOICE PROFILE AND DELIVERY:\n"
+        f"{voice_directive or 'Use a clear, genre-credible lead vocal with specific point of view.'}\n\n"
+        "WRITING RULES:\n"
+        "- Use concrete objects, physical places, actions, sensory details, and consequence in every section.\n"
+        "- Show emotion indirectly through what the narrator notices, touches, avoids, breaks, carries, or leaves behind.\n"
+        "- Let Verse 1 establish the room and pressure; Verse 2 must move the story forward, not repeat the setup.\n"
+        "- The bridge must reveal a consequence or reversal.\n"
+        "- The final chorus must pay off the emotional turn.\n"
+        "- Use short singable lines with varied sentence shapes.\n"
+        "- Never mention production terms or system/prompt text.\n\n"
+        "CHORUS REQUIREMENTS:\n"
+        "- Build around one memorable repeated phrase from the hook concept or title image.\n"
+        "- Do not use generic hype phrases.\n"
+        "- Follow the chorus strategy from the song brief when present; vary chorus structure by changing one line, tense, or consequence.\n"
+        "- Chorus must deliver emotional payoff through a concrete image or action.\n\n"
+        "NEGATIVE INSTRUCTION BLOCK:\n"
+        f"Do not write motivational filler, generic EDM slogans, or these banned phrases: {banned}.\n"
+        "BAD lyric examples:\n"
+        "We rise through the night, hands up, feel alive\n"
+        "City lights keep the signal strong and we never let go\n"
+        "We own the night, never fade, right here right now\n"
+        "GOOD lyric examples:\n"
+        "Paper wristband sticks to the payphone glass\n"
+        "Blue exit lights cut across the borrowed keys\n"
+        "Static on platform four says her name before I do\n\n"
+        f"The song should feel like: {feel_text}.\n"
+        f"{direction_text}\n"
+        f"{avoid_text}\n"
+        f"Keep imagery and language authentic to {genre}. {constraints_block}\n"
+        f"{safety}\n"
+        f"Avoid copying these recent titles: {recent_titles}.\n"
+        f"{_quality_repair_block(quality_reasons=quality_reasons, previous_lyrics=previous_lyrics)}"
+        f"Variation token for uniqueness only, never print it: {variation_salt}.\n"
+        "Return JSON only: {\"title\":\"...\",\"lyrics\":\"...\"}. "
+        "Set title to a unique, musical, image-driven title (max 80 chars), not a raw topic copy. "
+        "Lyrics must use this exact section order: "
+        "[INTRO] -> [VERSE 1] -> optional [PRE-CHORUS] -> [CHORUS] -> [VERSE 2] -> optional [PRE-CHORUS] -> [CHORUS] -> [BRIDGE] -> [FINAL CHORUS] -> [OUTRO]. "
+        "Lyrics value must be a plain string, not an object. "
+        "Do not reuse any full line between Verse 1 and Verse 2."
+    )
+
+
 async def _try_remote_lyrics(
     *,
     base_urls: list[str],
@@ -1251,6 +1395,8 @@ async def _try_remote_lyrics(
     lyric_constraints: dict[str, Any] | None = None,
     voice_profile: dict[str, Any] | None = None,
     song_brief: dict[str, Any] | None = None,
+    quality_reasons: list[str] | None = None,
+    previous_lyrics: str | None = None,
 ) -> tuple[str | None, str | None, str | None]:
     safety = "Use radio-safe language only." if clean_lyrics_only else "Avoid gratuitous explicit content."
     topic_items = [str(x).strip() for x in (topic_ideas or []) if str(x).strip()]
@@ -1269,13 +1415,7 @@ async def _try_remote_lyrics(
     concept = _concept_from_song_brief(song_brief, fallback_concept)
     brief_text = format_song_brief(song_brief)
     voice_directive = format_voice_directive(voice_profile)
-    system = (
-        "Return strictly valid JSON with exactly two keys: title, lyrics. "
-        "Use English words with ASCII characters only."
-    )
-    avoid_lines = (
-        "Avoid stock filler lines, generic momentum slogans, and any repeated boilerplate phrasing."
-    )
+    system = _remote_lyric_system_prompt()
     constraints = lyric_constraints or {}
     constraints_block = (
         f"Tempo {constraints.get('tempo_range_bpm', 'genre-consistent')} BPM, "
@@ -1284,27 +1424,25 @@ async def _try_remote_lyrics(
         f"target duration {constraints.get('target_duration_sec', 320)}s, "
         f"lyrics mode {constraints.get('lyrics_mode', 'mixed')}."
     )
-    user = (
-        f"You are a {genre} song writer.\n"
-        f"Write song lyrics about this exact topic: {chosen_topic}.\n"
-        f"Use this song brief as the source of the story; do not merely mention the topic:\n{brief_text or 'none'}\n"
-        f"Actual song concept: {concept['premise']}; setting: {concept['setting']}; conflict: {concept['conflict']}; image bank: {concept['images']}.\n"
-        f"The song should feel like: {feel_text}.\n"
-        f"{voice_directive}\n"
-        f"{direction_text}\n"
-        f"{avoid_text}\n"
-        f"Keep imagery and language authentic to {genre}. {constraints_block}\n"
-        f"{safety}\n"
-        f"{avoid_lines}\n"
-        "Never mention production terms or system/prompt text.\n"
-        f"Avoid copying these recent titles: {', '.join([str(x.get('title', '')).strip() for x in (recent_tracks or []) if str(x.get('title', '')).strip()][:5]) or 'none'}.\n"
-        f"Variation token: {variation_salt}.\n"
-        "Return JSON only: {\"title\":\"...\",\"lyrics\":\"...\"}. "
-        "Set title to a unique, genre-accurate song title (max 80 chars). "
-        "Lyrics must use this exact section order: "
-        "[INTRO] -> [VERSE 1] -> optional [PRE-CHORUS] -> [CHORUS] -> [VERSE 2] -> optional [PRE-CHORUS] -> [CHORUS] -> [BRIDGE] -> [FINAL CHORUS] -> [OUTRO]. "
-        "Use short concrete lines. Lyrics value must be a plain string, not an object. "
-        "Do not reuse any full line between Verse 1 and Verse 2."
+    user = _build_remote_lyric_user_prompt(
+        genre=genre,
+        chosen_topic=chosen_topic,
+        mood=mood,
+        station_name=station_name,
+        station_description=station_description,
+        personality=personality,
+        recent_tracks=recent_tracks,
+        variation_salt=variation_salt,
+        safety=safety,
+        feel_text=feel_text,
+        direction_text=direction_text,
+        avoid_text=avoid_text,
+        concept=concept,
+        brief_text=brief_text,
+        voice_directive=voice_directive,
+        constraints_block=constraints_block,
+        quality_reasons=quality_reasons,
+        previous_lyrics=previous_lyrics,
     )
 
     fallback_text: str | None = None
@@ -1613,6 +1751,8 @@ async def preprocess_generation(
     lyrics_auth_password = str(getattr(settings, "lyrics_refiner_auth_password", "") or "").strip() or None
     lyrics_temp = float(getattr(settings, "lyrics_refiner_temperature", 0.7))
     lyrics_urls = [x.strip() for x in lyrics_urls_raw.split(",") if x.strip()]
+    quality_repair_attempted = False
+    quality_repair_success = False
 
     if lyrics_mode != "instrumental_only" and lyrics_model and lyrics_urls:
         title = _suggest_song_title(station_name=station_name, topic=chosen_topic, daypart=daypart)
@@ -1676,6 +1816,7 @@ async def preprocess_generation(
             recent_generations=recent_generations,
         )
         if not bool(lyric_quality.get("passed")) and lyrics_model and lyrics_urls:
+            quality_repair_attempted = True
             repair_salt = f"{variation_salt}-repair"
             remote_result = await _try_remote_lyrics(
                 base_urls=lyrics_urls,
@@ -1707,6 +1848,8 @@ async def preprocess_generation(
                 lyric_constraints=lyric_constraints,
                 voice_profile=voice_profile if lyrics_mode != "instrumental_only" else None,
                 song_brief=song_brief,
+                quality_reasons=[str(x) for x in lyric_quality.get("reasons", [])],
+                previous_lyrics=lyrics,
             )
             repair_lyrics: str | None
             repair_source: str | None
@@ -1732,6 +1875,7 @@ async def preprocess_generation(
                     lyrics = repaired
                     lyric_quality = repair_quality
                     lyrics_source = f"openwebui:{repair_source}:quality_repair"
+                    quality_repair_success = True
                     if repair_title:
                         suggested_title = " ".join(str(repair_title).split())[:80] or suggested_title
         if not bool(lyric_quality.get("passed")):
@@ -1811,6 +1955,9 @@ async def preprocess_generation(
             remote.diagnostics["voice_profile"] = voice_profile or {}
             remote.diagnostics["song_brief"] = song_brief
             remote.diagnostics["lyric_quality"] = lyric_quality
+            remote.diagnostics["remote_prompt_version"] = _REMOTE_LYRIC_PROMPT_VERSION
+            remote.diagnostics["quality_repair_attempted"] = quality_repair_attempted
+            remote.diagnostics["quality_repair_success"] = quality_repair_success
             if not remote.technical_parameters:
                 remote.technical_parameters = technical_parameters
             if not remote.music_caption:
@@ -1840,6 +1987,9 @@ async def preprocess_generation(
             "voice_profile": voice_profile or {},
             "song_brief": song_brief,
             "lyric_quality": lyric_quality,
+            "remote_prompt_version": _REMOTE_LYRIC_PROMPT_VERSION,
+            "quality_repair_attempted": quality_repair_attempted,
+            "quality_repair_success": quality_repair_success,
             "technical_parameters": technical_parameters,
         },
         music_caption=music_caption,

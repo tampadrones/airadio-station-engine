@@ -135,24 +135,32 @@ async def test_preprocess_uses_dedicated_remote_lyrics_when_configured(monkeypat
         lyrics_refiner_base_urls = "http://openwebui.local"
         lyrics_refiner_model = "qwen2.5"
 
-    async def fake_remote_lyrics(**_: object):
+    async def fake_remote_lyrics(**kwargs: object):
+        brief = kwargs.get("song_brief") if isinstance(kwargs.get("song_brief"), dict) else {}
+        setting = str(brief.get("setting") or "chrome dashboard glow")
+        conflict = str(brief.get("conflict") or "the past keeps calling while the road demands a choice")
+        hook = str(brief.get("hook_concept") or "the message I cannot ignore")
+        image = str((brief.get("imagery_bank") or ["tail lights"])[0]) if isinstance(brief.get("imagery_bank"), list) else "tail lights"
         return (
-            "[INTRO]\nNeon marks the city escape before the turn\n\n"
+            f"[INTRO]\n{image.title()} marks the city escape before the turn\n\n"
             "[VERSE 1]\nI stand inside the chrome dashboard glow\n"
-            "The past keeps calling while the road demands a choice\n"
-            "Tail lights cut the wet overpass in blue\n"
+            f"The scene is {setting}\n"
+            f"{conflict.capitalize()}\n"
             "Cassette hiss keeps the message honest\n\n"
             "[CHORUS]\nCity escape is the message I cannot ignore\n"
-            "Chrome catches the warning in a sharper light\n"
-            "Neon names the exit before I miss it\n"
+            f"{hook.capitalize()}\n"
+            f"{image.title()} catches the warning in a sharper light\n"
             "I choose the road before it chooses me\n\n"
             "[VERSE 2]\nThe violet signs lean over the last lane\n"
             "Blue rain turns the old promise into proof\n"
             "The message arrives with no room left for hiding\n"
             "Tail lights pull the memory out of reach\n\n"
+            "[BRIDGE]\nThe key ring shakes against the payphone shelf\n"
+            f"{setting.capitalize()} keeps the proof in view\n"
+            "I stop treating the warning like weather\n\n"
             "[FINAL CHORUS]\nCity escape becomes the turn I finally take\n"
-            "Chrome catches the warning in a different light\n"
-            "Neon names the exit before the fade\n"
+            f"{hook.capitalize()} before the fade\n"
+            f"{image.title()} answers back in a different light\n"
             "I leave with proof and not a slogan\n",
             "http://openwebui.local",
         )
@@ -177,6 +185,9 @@ async def test_preprocess_uses_dedicated_remote_lyrics_when_configured(monkeypat
     assert "chrome dashboard glow" in out.lyrics.lower()
     assert out.diagnostics["lyrics_source"] == "openwebui:http://openwebui.local"
     assert out.diagnostics["lyrics_model"] == "qwen2.5"
+    assert out.diagnostics["remote_prompt_version"] == "cinematic-brief-v2"
+    assert out.diagnostics["quality_repair_attempted"] is False
+    assert out.diagnostics["quality_repair_success"] is False
     assert isinstance(out.diagnostics.get("suggested_title"), str)
     assert str(out.diagnostics.get("suggested_title")).strip() != ""
 
@@ -470,6 +481,178 @@ async def test_remote_lyrics_uses_signin_token_after_401(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_remote_lyrics_prompt_contains_song_brief_voice_and_negative_blocks(monkeypatch):
+    captured = {"system": "", "user": ""}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/api/chat/completions"):
+            payload = json.loads(request.content.decode("utf-8"))
+            captured["system"] = str(payload["messages"][0]["content"])
+            captured["user"] = str(payload["messages"][1]["content"])
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "title": "Blue Exit Lights",
+                                        "lyrics": "[INTRO]\nBlue exit lights\n\n[VERSE 1]\nReceipt ink on my sleeve",
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
+        if path.endswith("/api/v1/chats/new"):
+            return httpx.Response(200, json={"id": "chat-123"})
+        if path.endswith("/api/v1/chats/chat-123"):
+            return httpx.Response(200, json={"ok": True})
+        return httpx.Response(404, json={})
+
+    transport = httpx.MockTransport(handler)
+
+    class Client(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(pp.httpx, "AsyncClient", Client)
+
+    song_brief = {
+        "topic": "arcade goodbye",
+        "angle": "a paper wristband turns arcade goodbye into proof that daylight can ruin",
+        "narrator": "door person stamping wrists like tiny verdicts",
+        "setting": "neon bathroom with marker on the mirror",
+        "conflict": "two people pretend not to notice the packed bag by the door",
+        "emotional_turn": "bravado drops into a private apology",
+        "hook_concept": "the chorus should feel handwritten on the back of a wristband",
+        "chorus_strategy": "repeat the title only at the end of the chorus",
+        "imagery_bank": ["paper wristband", "blue exit lights", "receipt ink"],
+        "title_seed": "After the Wristband",
+    }
+    voice_profile = {
+        "gender": "female",
+        "vocal_tone": "airy, glassy synth-pop tone",
+        "delivery": "floating lead with long vowels",
+        "range_hint": "upper register",
+    }
+
+    lyrics, source, title = await pp._try_remote_lyrics(
+        base_urls=["http://openwebui.local"],
+        model="qwen2.5",
+        api_key="token",
+        auth_email=None,
+        auth_password=None,
+        timeout_seconds=5,
+        temperature=0.7,
+        genre="Synthwave",
+        title="After the Wristband",
+        mood="release",
+        topic="arcade goodbye",
+        clean_lyrics_only=True,
+        station_name="Neon Harbor",
+        station_description="retro glow",
+        personality="Velvet Static",
+        recent_tracks=[],
+        variation_salt="briefprompt",
+        voice_profile=voice_profile,
+        song_brief=song_brief,
+        lyric_constraints={"tempo_range_bpm": "96-122", "key_hint": "D major", "time_signature": "4/4", "target_duration_sec": 212, "lyrics_mode": "vocal_forward"},
+    )
+
+    prompt_text = f"{captured['system']}\n{captured['user']}"
+    assert lyrics is not None
+    assert source == "http://openwebui.local"
+    assert title == "Blue Exit Lights"
+    assert "professional songwriter" in captured["system"]
+    assert "not an AI assistant" in captured["system"]
+    assert "SONG BRIEF FIELDS TO USE STRONGLY" in captured["user"]
+    assert "door person stamping wrists like tiny verdicts" in captured["user"]
+    assert "neon bathroom with marker on the mirror" in captured["user"]
+    assert "two people pretend not to notice the packed bag by the door" in captured["user"]
+    assert "bravado drops into a private apology" in captured["user"]
+    assert "the chorus should feel handwritten on the back of a wristband" in captured["user"]
+    assert "repeat the title only at the end of the chorus" in captured["user"]
+    assert "Vocal profile: female; airy, glassy synth-pop tone" in captured["user"]
+    assert "NEGATIVE INSTRUCTION BLOCK" in captured["user"]
+    for phrase in ["we rise", "feel alive", "through the night", "city lights", "signal strong", "hands up", "never let go"]:
+        assert phrase in prompt_text
+
+
+@pytest.mark.asyncio
+async def test_remote_lyrics_repair_prompt_includes_failure_reasons(monkeypatch):
+    captured = {"user": ""}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/api/chat/completions"):
+            payload = json.loads(request.content.decode("utf-8"))
+            captured["user"] = str(payload["messages"][1]["content"])
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "title": "Receipt Under Glass",
+                                        "lyrics": "[INTRO]\nReceipt under glass\n\n[VERSE 1]\nThe diner booth waits",
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(200, json={})
+
+    transport = httpx.MockTransport(handler)
+
+    class Client(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(pp.httpx, "AsyncClient", Client)
+
+    lyrics, source, _ = await pp._try_remote_lyrics(
+        base_urls=["http://openwebui.local"],
+        model="qwen2.5",
+        api_key="token",
+        auth_email=None,
+        auth_password=None,
+        timeout_seconds=5,
+        temperature=0.82,
+        genre="Pop",
+        title="Receipt Under Glass",
+        mood="release",
+        topic="hard apology",
+        clean_lyrics_only=True,
+        station_name="Neon Harbor",
+        station_description="late night pop station",
+        personality="Velvet Static",
+        recent_tracks=[],
+        variation_salt="repairprompt",
+        quality_reasons=["generic_filler_phrases", "song_brief_underused", "repeated_chorus_lines"],
+        previous_lyrics="[CHORUS]\nWe rise through the night\nWe rise through the night",
+    )
+
+    assert lyrics is not None
+    assert source == "http://openwebui.local"
+    assert "QUALITY REPAIR PASS" in captured["user"]
+    assert "generic_filler_phrases" in captured["user"]
+    assert "song_brief_underused" in captured["user"]
+    assert "repeated_chorus_lines" in captured["user"]
+    assert "Remove all banned filler" in captured["user"]
+    assert "Use the narrator, setting, conflict, hook concept" in captured["user"]
+    assert "Previous weak draft excerpt to avoid copying" in captured["user"]
+
+
+@pytest.mark.asyncio
 async def test_remote_lyrics_returns_templatey_text_as_remote_fallback(monkeypatch):
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/api/chat/completions"):
@@ -655,6 +838,8 @@ async def test_remote_lyrics_prompt_includes_music_constraints(monkeypatch):
     )
 
     assert lyrics is not None
+    assert "Tempo 96-122 BPM" in captured["user_prompt"]
+    assert "key hint D major" in captured["user_prompt"]
 
 
 @pytest.mark.asyncio
