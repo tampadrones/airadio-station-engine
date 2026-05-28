@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.song_brief import build_song_brief
+from app.services.song_brief import build_song_brief, _pools
 from app.services.prompt_preprocessor import preprocess_generation
 
 
@@ -99,6 +99,159 @@ def test_broad_topic_becomes_concrete_song_concept():
     assert brief["conflict"]
     assert brief["hook_concept"]
     assert brief["angle"] != "love"
+
+
+def test_topic_cleanup_removes_generic_energy_tokens_and_preserves_raw_topic():
+    brief = build_song_brief(
+        topic="adrenaline rush high energy",
+        genre="pop",
+        mood="peak",
+        daypart="evening",
+        station_profile={},
+        recent_generations=[],
+        salt="fixed",
+    )
+
+    assert brief["raw_topic"] == "adrenaline rush high energy"
+    assert brief["topic"] == "adrenaline rush"
+    assert "high energy" not in brief["title_seed"].lower()
+    assert "energy" not in brief["title_seed"].lower()
+    assert len(brief["title_seed"].split()) <= 6
+    assert str(brief).isascii()
+
+
+def test_angles_are_natural_premises_not_prompt_instructions():
+    for salt in ["a", "b", "c", "d", "e"]:
+        brief = build_song_brief(
+            topic="adrenaline rush high energy",
+            genre="pop",
+            mood="peak",
+            daypart="evening",
+            station_profile={},
+            recent_generations=[],
+            salt=salt,
+        )
+        lowered = brief["angle"].lower()
+        assert "make the topic" not in lowered
+        assert "turn the topic" not in lowered
+        assert "frame the topic" not in lowered
+        assert "adrenaline rush" in lowered
+
+
+def test_expanded_pools_meet_diversity_floor():
+    pools = _pools("EDM trance")
+
+    assert len(pools["setting"]) >= 40
+    assert len(pools["conflict"]) >= 40
+    assert len(pools["narrator"]) >= 25
+    assert len(pools["emotional_turn"]) >= 25
+    assert len(pools["hook_concept"]) >= 25
+
+
+def test_ten_briefs_do_not_collapse_to_same_grammar():
+    recent = []
+    briefs = []
+    for idx in range(10):
+        brief = build_song_brief(
+            topic="late apology",
+            genre="pop",
+            mood="rise",
+            daypart="night",
+            station_profile={},
+            recent_generations=recent,
+            salt=f"grammar-{idx}",
+        )
+        briefs.append(brief)
+        recent.insert(0, {"song_brief": brief})
+
+    assert len({brief["structure_mode"] for brief in briefs}) >= 4
+    assert len({brief["angle_template"] for brief in briefs}) >= 8
+    assert len({brief["angle"].split()[0].lower() for brief in briefs}) >= 5
+
+
+def test_settings_rotate_with_recent_generations():
+    recent = []
+    settings = []
+    for idx in range(10):
+        brief = build_song_brief(
+            topic="afterparty truth",
+            genre="EDM trance",
+            mood="peak",
+            daypart="late_night",
+            station_profile={},
+            recent_generations=recent,
+            salt=f"setting-{idx}",
+        )
+        settings.append(brief["setting"])
+        recent.insert(0, {"song_brief": brief})
+
+    assert len(set(settings)) >= 9
+    assert all(a != b for a, b in zip(settings, settings[1:]))
+
+
+def test_title_seeds_vary_naturally_without_repeated_prefixes():
+    recent = []
+    titles = []
+    for idx in range(10):
+        brief = build_song_brief(
+            topic="night drive",
+            genre="synthwave",
+            mood="rise",
+            daypart="night",
+            station_profile={},
+            recent_generations=recent,
+            salt=f"title-{idx}",
+        )
+        titles.append(brief["title_seed"])
+        recent.insert(0, {"song_brief": brief})
+
+    prefixes = [title.split()[0].lower() for title in titles]
+    assert len(set(titles)) >= 9
+    assert len(set(prefixes)) >= 6
+    assert "night drive" not in {title.lower() for title in titles}
+    assert not any(title.lower().startswith("night ") for title in titles)
+
+
+def test_repeated_topic_produces_distinct_concepts_with_recent_avoidance():
+    recent = []
+    concepts = []
+    for idx in range(10):
+        brief = build_song_brief(
+            topic="love",
+            genre="rap trap",
+            mood="baseline",
+            daypart="evening",
+            station_profile={},
+            recent_generations=recent,
+            salt=f"repeat-{idx}",
+        )
+        concepts.append((brief["angle"], brief["setting"], brief["conflict"], brief["title_seed"]))
+        recent.insert(0, {"song_brief": brief})
+
+    assert len(set(concepts)) >= 9
+    assert len({concept[1] for concept in concepts}) >= 9
+    assert len({concept[2] for concept in concepts}) >= 9
+
+
+def test_repeated_topic_avoids_before_dawn_and_chance_disappears_spam():
+    recent = []
+    text = []
+    for idx in range(10):
+        brief = build_song_brief(
+            topic="second chance",
+            genre="pop",
+            mood="release",
+            daypart="morning",
+            station_profile={},
+            recent_generations=recent,
+            salt=f"spam-{idx}",
+        )
+        text.append(" ".join(str(brief[field]) for field in ["angle", "setting", "conflict", "emotional_turn", "hook_concept"]))
+        recent.insert(0, {"song_brief": brief})
+
+    lowered = " ".join(text).lower()
+    assert "before dawn" not in lowered
+    assert "chance disappears" not in lowered
 
 
 @pytest.mark.asyncio
