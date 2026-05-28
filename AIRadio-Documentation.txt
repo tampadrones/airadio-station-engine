@@ -1,0 +1,437 @@
+AI RADIO (AIRadio) - COMPLETE REBUILD DOCUMENTATION
+Last updated: 2026-04-15
+Primary operator: apox
+
+2026-05-27 local AIRadio recovery
+- Local AIRadio was offline because Python source files had been corrupted:
+  - `apps/api/app/services/playback_reconcile.py` had shell commands pasted before `from __future__ import annotations`, causing the worker to crash on import.
+  - `apps/api/app/services/station_engine.py` had a dangling event payload fragment after a `return`, causing API startup to fail with `SyntaxError: unmatched ')'`.
+- Repaired both syntax failures, restored the zero-listener idle queue cap to `station_idle_min_ready_tracks`, and restarted `api` and `worker`.
+- Verified `api`, `worker`, and `web` healthy locally; nginx serves the station list at `http://127.0.0.1:8088`.
+- Generator health points to `http://10.0.0.5:7860` with `generator_queue_size=0` and `generator_queue_health=healthy`.
+- Current station status after recovery: Tropical Breeze, Kileys Tunes, and Ambient Focus healthy; Lite Rock degraded because queue depth is 4 against target 5.
+
+2026-04-15 idle generation control update
+- Zero-listener stations no longer refill toward full `target_queue_depth` just because bootstrap is allowed.
+- When a station has no listeners, refill is now capped to `station_idle_min_ready_tracks` only.
+- If the idle buffer already meets that floor, worker refill skips with `idle_buffer_healthy`.
+- Newly enabled or recently updated stations get a short activation refill window and may refill toward full `target_queue_depth` even with zero listeners.
+- Activation refill is still suppressed when other stations currently have active listeners, to preserve listener-first priority.
+- Station playback now exposes a shared Liquidsoap unix control socket at `/var/lib/ai-radio/playback/liquidsoap.sock`.
+- The station page `Skip Current` action removes the active track from queue export and forces a Liquidsoap reload, which advances to the next playable item after a short restart window.
+- Important playback caveat: Liquidsoap is still configured as an always-on HLS source, so manifests can remain fresh with zero listeners. That is separate from generator load. Fully stopping playback when idle requires a listener-intent or on-demand streaming redesign so tune-in does not deadlock waiting for a manifest.
+
+======================================================================
+1) PROJECT PURPOSE
+======================================================================
+AIRadio is a self-hosted AI radio system that continuously generates genre-specific tracks and streams them as always-on stations.
+
+Core goals:
+- Multiple stations with distinct genre/personality profiles.
+- Continuous queue refill using ACE-Step generation.
+- Optional prompt/lyrics refinement through OpenWebUI.
+- Playback executed by Liquidsoap (HLS output), while scheduling/business logic remains in Python.
+- Web UI + API + worker orchestration + metrics/stats.
+
+Current known station defaults:
+- Synthwave FM
+- Trap Afterhours
+- Lo-Fi Desk
+
+
+======================================================================
+2) HIGH-LEVEL ARCHITECTURE
+======================================================================
+Services:
+- api (FastAPI): orchestration API, station/state/stats endpoints, migrations.
+- worker (Python loop): generation/refill, playback reconciliation, storage maintenance.
+- postgres: persistent metadata/state.
+- redis: queue/cache plumbing.
+- liquidsoap: playback runtime and HLS segment generation.
+- web (Next.js): public player/admin/stats UI.
+- nginx: reverse proxy + serves HLS path.
+- openwebui (separate container on host .5): prompt/lyrics refinement endpoint.
+- ACE-Step Gradio server (host-level service on .5, port 7865): audio generator.
+
+Playback boundary (important design choice):
+- Python owns queue, refill logic, prompt/daypart/mood, QC, storage lifecycle.
+- Liquidsoap owns actual playout + HLS publishing + now-playing sidecar outputs.
+
+Data flow:
+1. Worker checks each station queue depth.
+2. If low, worker generates track(s) through ACE-Step.
+3. QC + station-fit checks decide ready/failed.
+4. Worker exports queue/fallback sidecars for Liquidsoap.
+5. Liquidsoap plays queue and updates sidecars + HLS.
+6. Worker reconciles backend state into DB/stats.
+
+
+======================================================================
+3) REPOSITORY LAYOUT (KEY PATHS)
+======================================================================
+Root: /home/apox/airadio
+
+Important files/folders:
+- README.md
+- docker-compose.yml
+- .env.example
+- apps/api
+- apps/worker
+- apps/web
+- packages/generator
+- packages/playback
+- packages/observability
+- infra/nginx/nginx.conf
+- infra/liquidsoap/*
+- scripts/boot_health_verify.sh
+- docs/*
+
+
+======================================================================
+4) RUNTIME PORT MAP
+======================================================================
+On host 10.0.0.5 (target production host):
+- 3001 -> AIRadio web (Next.js)
+- 8088 -> AIRadio nginx
+- 8000 -> AIRadio API
+- 5432 -> Postgres
+- 6379 -> Redis
+- 7865 -> ACE-Step Gradio server (host service, not compose)
+- 3000 -> OpenWebUI (added as standalone docker container)
+
+
+======================================================================
+5) ENVIRONMENT CONFIGURATION
+======================================================================
+Primary runtime env source in compose is .env.example (note: compose currently references .env.example directly).
+
+Critical variables:
+- GENERATOR_BASE_URL=http://10.0.0.5:7865
+- GENERATOR_PREDICT_PATH=/gradio_api/call/generation_wrapper
+- GENERATOR_TIMEOUT_SECONDS=180
+- GENERATOR_MAX_RETRIES=3
+- GENERATOR_RETRY_BACKOFF_SECONDS=2
+
+Prompt/Lyrics refiner:
+- PROMPT_REFINER_BASE_URLS=http://10.0.0.7:3000
+- PROMPT_REFINER_MODEL=qwen2.5:latest
+- PROMPT_REFINER_TIMEOUT_SECONDS=20
+- PROMPT_REFINER_API_KEY=<optional, may be ignored if signin works>
+
+- LYRICS_REFINER_BASE_URLS=http://10.0.0.7:3000
+- LYRICS_REFINER_MODEL=qwen2.5:latest
+- LYRICS_REFINER_TIMEOUT_SECONDS=45
+- LYRICS_REFINER_API_KEY=<optional>
+- LYRICS_REFINER_AUTH_EMAIL=admin@localhost
+- LYRICS_REFINER_AUTH_PASSWORD=<openwebui admin password>
+- LYRICS_REFINER_TEMPERATURE=0.7
+
+Other key vars:
+- WORKER_TICK_SECONDS=10
+- PLAYBACK_ROOT=/var/lib/ai-radio/playback
+- HLS_ROOT=/var/lib/ai-radio/hls
+- TIMEZONE=America/New_York
+- STATION_REFILL_MAX_GENERATIONS_PER_CYCLE=2
+
+
+======================================================================
+6) LOCAL OR FRESH HOST REBUILD PROCEDURE
+======================================================================
+A) Prerequisites
+1. Install Docker Engine + Compose plugin.
+2. Ensure host can reach:
+   - ACE-Step at http://10.0.0.5:7865
+   - (optional but recommended) Ollama at http://10.0.0.36:11434
+
+B) Checkout and boot AIRadio stack
+1. Clone/copy repo to /home/apox/airadio
+2. Copy `.env.example` to `.env` if needed, then verify env values in `.env`
+3. Start stack:
+   docker compose up -d --build
+4. Validate containers:
+   docker compose ps
+
+C) Bring up OpenWebUI on .5 (if missing)
+Run on host 10.0.0.5:
+  docker rm -f openwebui >/dev/null 2>&1 || true
+  docker run -d --name openwebui \
+    --restart unless-stopped \
+    -p 3000:8080 \
+    -e OLLAMA_BASE_URL=http://10.0.0.36:11434 \
+    -v openwebui_data:/app/backend/data \
+    ghcr.io/open-webui/open-webui:main
+
+D) Ensure OpenWebUI auth account exists
+- First sign-in account is typically admin@localhost.
+- Create/sign in and set known password.
+- Set LYRICS_REFINER_AUTH_EMAIL and LYRICS_REFINER_AUTH_PASSWORD accordingly.
+
+E) Recreate api+worker after env changes
+  docker compose up -d --force-recreate api worker
+
+
+======================================================================
+7) MIGRATION NOTES: MOVE TO HOST 10.0.0.5
+======================================================================
+This project was migrated to host .5 after repeated shutdowns on another host.
+
+Migration pattern used:
+1. rsync project to /home/apox/airadio on .5.
+2. docker compose up -d --build on .5.
+3. Resolve stale container name conflicts with compose rerun.
+4. Validate API/UI endpoints.
+
+Critical host issue discovered on .5:
+- /mnt/data_sdb (sda1) had I/O errors and remounted read-only.
+- Docker/containerd were initially configured to use /mnt/data_sdb roots, causing build/extract failures.
+
+Fix applied on .5:
+- docker data-root moved to /var/lib/docker
+- containerd root moved to /var/lib/containerd
+- restart docker + containerd
+
+This fix is mandatory if you see errors like:
+- failed to create temp dir in containerd snapshots
+- EXT4 journal abort / remount read-only in kernel logs
+
+
+======================================================================
+8) BOOT RESILIENCY / AUTO-RECOVERY
+======================================================================
+File:
+- scripts/boot_health_verify.sh
+
+Behavior:
+- waits after reboot
+- ensures Docker is reachable before compose commands
+- starts compose services
+- health checks API + Web + nginx
+- retries with targeted restarts/recreate including web/nginx if unhealthy
+- logs to state/boot-health.log
+
+Cron entry used:
+- @reboot /home/apox/airadio/scripts/boot_health_verify.sh # airadio-boot-health
+
+Compose restart policies:
+- services use restart: unless-stopped
+
+
+======================================================================
+9) HEALTH CHECK PLAYBOOK
+======================================================================
+Container status:
+- docker compose ps
+
+Core HTTP checks:
+- curl http://10.0.0.5:8000/api/stats/stations
+- curl http://10.0.0.5:3001
+- curl http://10.0.0.5:8088
+
+Station now-playing:
+- curl http://10.0.0.5:8000/api/stations/synthwave-fm/now-playing
+
+Generation stats:
+- curl http://10.0.0.5:8000/api/stats/generation
+
+ACE-Step status:
+- curl http://10.0.0.5:7865/config
+- curl http://10.0.0.5:7865/gradio_api/queue/status
+
+OpenWebUI status:
+- curl http://10.0.0.5:3000
+- curl http://10.0.0.5:3000/api/models  (may require auth)
+
+Log checks:
+- docker compose logs --tail 200 api worker web nginx liquidsoap
+- docker logs --tail 200 openwebui
+
+Verified operational behavior on 2026-04-15:
+- `api` now runs without `uvicorn --reload` in compose.
+- `web` now boots from a prebuilt standalone image instead of rebuilding on every container start.
+- `api` and `web` have compose health checks.
+- `nginx` now waits for healthy `api` and `web` before starting.
+- `scripts/boot_health_verify.sh` now checks Docker availability first and includes `web`/`nginx` in recovery actions.
+- Compose now reads `.env` for service runtime config; keep `.env.example` as the template only.
+- AIRadio's ACE-Step client now prefers Gradio's lower-level `/gradio_api/queue/join` + `/gradio_api/queue/data` flow, which preserves real server-side error messages instead of collapsing failures to `data: null`.
+
+Generation-path troubleshooting note:
+- If tracks remain in `generating` state for many minutes with no fresh file under `/var/lib/ai-radio/hot/stations/<slug>/tracks/`, the current issue is likely upstream of playback and web startup.
+- A direct ACE-Step client probe from inside the stack may fail with `No non-null payload observed in Gradio stream`, which indicates the Gradio generation endpoint accepted the request but did not deliver a terminal payload through the current stream/fetch path.
+- In that case, confirm `http://10.0.0.5:7865/config` and `http://10.0.0.5:7865/gradio_api/queue/status` are reachable from the `api` container, then inspect ACE-Step host-side logs.
+- On 2026-04-15 the real upstream failure was recovered by switching to `/gradio_api/queue/data` for debugging and observing:
+  `[Errno 30] Read-only file system: '/home/apox/apps/ACE-Step-1.5/gradio_outputs/batch_...'`
+- Root cause on ACE-Step host `10.0.0.5` (`zeus`):
+  `/home/apox/acestep/gradio_outputs` pointed to `/mnt/data_sdb/acestep/gradio_outputs`, and `/mnt/data_sdb` was in ext4 emergency read-only mode.
+- Repair applied on 2026-04-15:
+  repointed `/home/apox/acestep/gradio_outputs` to `/home/apox/acestep_rootfs/gradio_outputs` on the writable root filesystem.
+- Post-fix verification on 2026-04-15:
+  AIRadio client probe returned a real WAV URL from ACE-Step, and fresh AIRadio-managed tracks appeared in DB:
+  `track_2120.wav` for `tropical-breeze` and `track_2121.wav` for `kileys-tunes`.
+
+
+======================================================================
+10) DATABASE / STATE VALIDATION QUERIES
+======================================================================
+Inside postgres container:
+- docker exec airadio-postgres-1 psql -U airadio -d airadio
+
+Useful SQL:
+A) Latest tracks
+select t.id, s.slug, t.status, t.duration_sec, t.title, t.created_at
+from tracks t join stations s on s.id=t.station_id
+order by t.id desc limit 20;
+
+B) Generation metadata source attribution
+select tg.track_id, s.slug, tg.created_at,
+       tg.recent_context->'preprocessor'->>'source' as source,
+       tg.recent_context->'preprocessor'->'diagnostics'->>'lyrics_source' as lyrics_source,
+       tg.recent_context->'preprocessor'->'diagnostics'->>'prompt_source' as prompt_source
+from track_generation tg
+join tracks t on t.id=tg.track_id
+join stations s on s.id=t.station_id
+order by tg.track_id desc limit 20;
+
+C) Ops events
+select id, timestamp, service, event_type, station_id, track_id, severity, left(message,90)
+from ops_events
+order by id desc limit 100;
+
+
+======================================================================
+11) IMPORTANT BEHAVIOR OBSERVED IN PRODUCTION
+======================================================================
+A) Generation queue and long waits
+- ACE-Step can backlog. During streaming tests queue_size stayed high.
+- Tracks can remain in status=generating while waiting for generator completion.
+
+B) OpenWebUI integration nuance
+- Even when OpenWebUI receives successful /api/chat/completions calls, track_generation source can still store local-template if parser/output validation rejects model response and falls back.
+- Therefore, verification must include BOTH:
+  1) OpenWebUI logs showing successful chat completion calls.
+  2) DB source attribution in track_generation recent_context.
+
+C) If source remains local-template
+- Confirm auth email/password match actual OpenWebUI account.
+- Confirm model exists in Ollama/OpenWebUI (e.g., qwen2.5:latest).
+- Check prompt_preprocessor parsing constraints and expected JSON format.
+
+
+======================================================================
+12) REBUILD + VERIFY CHECKLIST (SHORT FORM)
+======================================================================
+1. Docker/Compose installed.
+2. Repo present at /home/apox/airadio.
+3. .env.example critical endpoints set (.5:7865 and .5:3000).
+4. AIRadio compose up and healthy.
+5. OpenWebUI container running on .5:3000.
+6. OpenWebUI account credentials set in env.
+7. api+worker recreated after env edits.
+8. API/UI endpoints healthy.
+9. ACE-Step queue endpoint reachable.
+10. New generation rows appear in DB.
+11. track_generation preprocessor source checked.
+12. Boot health cron installed.
+
+
+======================================================================
+13) KNOWN COMMANDS USED FREQUENTLY
+======================================================================
+On .5 host:
+- cd /home/apox/airadio && docker compose up -d
+- cd /home/apox/airadio && docker compose ps
+- cd /home/apox/airadio && docker compose logs --tail 200 api worker web nginx
+- docker logs --tail 200 openwebui
+- curl -fsS http://10.0.0.5:8000/api/stats/stations
+- curl -fsS http://10.0.0.5:7865/gradio_api/queue/status
+
+
+======================================================================
+14) SECURITY / OPERATIONS NOTES
+======================================================================
+- Current defaults include weak placeholders and plain-text credentials in env examples. Replace for production hardening.
+- Restrict exposed ports externally where possible.
+- Snapshot volumes regularly:
+  - postgres_data
+  - airadio_storage
+  - openwebui_data
+- Keep host disk health monitored (SMART + journalctl for I/O errors).
+
+
+======================================================================
+15) CURRENT STATUS SNAPSHOT (AT DOCUMENT WRITE TIME)
+======================================================================
+- AIRadio stack is deployed and running on 10.0.0.5.
+- ACE-Step endpoint is reachable on 7865.
+- OpenWebUI/Ollama lyrics endpoint is running on 10.0.0.7:3000 and handling chat completion calls.
+- Refiner model configured to qwen2.5:latest.
+- Environment auth email/password must match the active OpenWebUI admin account configured in .env.example.
+- Boot-health script and restart policies are in place for resilience.
+
+
+======================================================================
+16) MAJOR UPDATES SINCE 2026-04-09
+======================================================================
+A) Listener-gated generation (strict)
+- Generation now runs only when station has active listeners.
+- Idle grace/warm-buffer generation was removed (fail-closed if listener state unavailable).
+- This prevents burning GPU/storage for stations with no audience.
+
+B) Song feedback loop (thumbs up/down)
+- UI now supports thumbs up/down on now-playing and queue/recent tracks.
+- API endpoint:
+  POST /api/stations/{slug}/tracks/{track_id}/feedback
+  body: { "session_id": "...", "vote": "up|down", "source": "web_*" }
+- Station detail and now-playing include feedback aggregates + per-session vote state.
+- Feedback influences generation:
+  - likes bias topic/taste/mood directions,
+  - dislikes add explicit avoidance constraints in negative prompting.
+- Reuse scoring also accounts for promoted/signature tracks.
+
+C) OpenWebUI title handoff enhancement
+- Lyrics step now requests structured output that can include a title.
+- If OpenWebUI returns title + lyrics, returned title is used as suggested track title before generator submit.
+- Backward compatible with older 2-field return paths.
+
+D) Reuse loop prevention (critical)
+- Reuse fallback now dedupes by origin track id and avoids selecting origins already active in queue/recent window.
+- Playback queue export also dedupes by origin id to prevent repeated source audio in cue list.
+- This fixes cases where station appeared to loop same song (same source/duration) repeatedly under generation timeout pressure.
+
+E) Storage cap enforcement hardening
+- Cap remains 10GB (GENERATED_STORAGE_CAP_GB=10).
+- Bug fixed: deleted tracks with detached assets could leave files on disk and inflate usage over cap.
+- Cleanup now removes detached deleted-track files physically and resets DB file metadata.
+- Cap pruning now estimates reclaimable bytes from actual on-disk files (not stale DB size only).
+- Result: cap enforcement now actually brings usage back under configured limit.
+
+
+======================================================================
+17) STORAGE CAP OPERATIONAL NOTES
+======================================================================
+Current behavior:
+- Cap cleanup is executed in worker loop at top of the hour (minute == 0).
+- If a generation pushes usage over cap, system can remain over cap until next cleanup cycle.
+- Cleanup prioritizes pruning oldest aired/failed tracks, then legacy deleted rows.
+- Ready/queued tracks are not cap-pruned directly by this path.
+
+Useful checks:
+- curl http://10.0.0.5:8000/api/stats/storage
+- docker compose exec -T api bash -lc 'du -sh /var/lib/ai-radio/hot'
+- In worker logs, watch for:
+  - storage_quota_warning
+  - storage_cleanup_completed
+
+
+======================================================================
+18) FEEDBACK + TITLE FLOW (REFERENCE)
+======================================================================
+Track creation flow:
+1. Topic chosen from station_profile.topic_ideas + taste_hints with anti-repeat logic.
+2. OpenWebUI lyrics request runs first (if enabled).
+3. Lyrics response can include title (preferred) and lyrics.
+4. Suggested title is uniqueness-normalized against station history.
+5. ACE-Step generation runs with prompt/negative/lyrics + mapped params.
+6. If generation fails and fallback reuse is needed, reuse picks diverse origin candidates and avoids active-origin duplication.
+2026-04-15
+- Stats / Ops dashboard now shows the live ACE-Step generator queue size near the top of the status panel.
+- Queue size is sourced from the generator host Gradio queue status endpoint and degrades to `Unavailable` instead of breaking the stats page if the host is unreachable.

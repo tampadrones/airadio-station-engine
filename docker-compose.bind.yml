@@ -1,0 +1,24 @@
+services:
+  postgres:
+    volumes:
+      - ./state/postgres:/var/lib/postgresql/data
+
+  api:
+    volumes:
+      - ./:/workspace
+      - ./state/storage:/var/lib/ai-radio
+
+  worker:
+    volumes:
+      - ./:/workspace
+      - ./state/storage:/var/lib/ai-radio
+
+  liquidsoap:
+    volumes:
+      - ./infra/liquidsoap:/etc/liquidsoap
+      - ./state/storage:/var/lib/ai-radio
+
+  nginx:
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./state/storage:/var/lib/ai-radio

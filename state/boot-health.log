@@ -1,0 +1,716 @@
+2026-04-08 20:01:41 [boot-health] starting
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-liquidsoap-1  Running
+ Container airadio-web-1  Running
+ Container airadio-worker-1  Running
+ Container airadio-nginx-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+2026-04-08 20:31:23 [boot-health] unhealthy on attempt 1; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                            PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          26 minutes ago   Up Less than a second             0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   26 minutes ago   Up Less than a second             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        26 minutes ago   Up Less than a second             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     26 minutes ago   Up Less than a second (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        26 minutes ago   Up Less than a second             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          26 minutes ago   Up Less than a second             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       26 minutes ago   Up Less than a second             
+2026-04-08 20:31:39 [boot-health] unhealthy on attempt 2; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                   PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          27 minutes ago   Up 9 seconds             0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   26 minutes ago   Up 9 seconds             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        26 minutes ago   Up 9 seconds             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     27 minutes ago   Up 9 seconds (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        27 minutes ago   Up 9 seconds             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          26 minutes ago   Up 9 seconds             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       26 minutes ago   Up 9 seconds             
+2026-04-08 20:31:55 [boot-health] unhealthy on attempt 3; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                    PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          27 minutes ago   Up 25 seconds             0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   27 minutes ago   Up 24 seconds             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        27 minutes ago   Up 24 seconds             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     27 minutes ago   Up 24 seconds (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        27 minutes ago   Up 25 seconds             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          27 minutes ago   Up 24 seconds             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       27 minutes ago   Up 25 seconds             
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-web-1  Running
+ Container airadio-nginx-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+2026-04-08 20:32:11 [boot-health] unhealthy on attempt 4; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                    PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          27 minutes ago   Up 41 seconds             0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   27 minutes ago   Up 41 seconds             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        27 minutes ago   Up 41 seconds             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     27 minutes ago   Up 41 seconds (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        27 minutes ago   Up 41 seconds             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          27 minutes ago   Up 41 seconds             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       27 minutes ago   Up 41 seconds             
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Recreate
+ Container airadio-api-1  Recreated
+ Container airadio-worker-1  Recreate
+ Container airadio-worker-1  Recreated
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Starting
+ Container airadio-api-1  Started
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-worker-1  Starting
+ Container airadio-worker-1  Started
+2026-04-08 20:32:44 [boot-health] unhealthy on attempt 5; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                        PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          32 seconds ago   Up 18 seconds                 0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   28 minutes ago   Up About a minute             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        28 minutes ago   Up About a minute             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     28 minutes ago   Up About a minute (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        28 minutes ago   Up About a minute             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          28 minutes ago   Up About a minute             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       30 seconds ago   Up 16 seconds                 
+2026-04-08 20:33:00 [boot-health] unhealthy on attempt 6; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                        PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          48 seconds ago   Up 33 seconds                 0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   28 minutes ago   Up About a minute             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        28 minutes ago   Up About a minute             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     28 minutes ago   Up About a minute (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        28 minutes ago   Up About a minute             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          28 minutes ago   Up About a minute             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       46 seconds ago   Up 31 seconds                 
+ Container airadio-worker-1  Restarting
+ Container airadio-api-1  Restarting
+ Container airadio-api-1  Started
+ Container airadio-worker-1  Started
+2026-04-08 20:33:28 [boot-health] healthy on attempt 7
+2026-04-08 20:47:47 [boot-health] starting
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-liquidsoap-1  Running
+ Container airadio-worker-1  Running
+ Container airadio-web-1  Running
+ Container airadio-nginx-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+2026-04-08 22:13:02 [boot-health] unhealthy on attempt 1; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED       STATUS                            PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 hours ago   Up Less than a second             0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   2 hours ago   Up Less than a second             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        2 hours ago   Up Less than a second             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     2 hours ago   Up Less than a second (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        2 hours ago   Up Less than a second             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          2 hours ago   Up Less than a second             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 hours ago   Up Less than a second             
+2026-04-08 22:13:18 [boot-health] unhealthy on attempt 2; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED       STATUS                   PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 hours ago   Up 9 seconds             0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   2 hours ago   Up 9 seconds             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        2 hours ago   Up 9 seconds             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     2 hours ago   Up 9 seconds (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        2 hours ago   Up 9 seconds             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          2 hours ago   Up 9 seconds             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 hours ago   Up 9 seconds             
+2026-04-08 22:13:34 [boot-health] unhealthy on attempt 3; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED       STATUS                    PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 hours ago   Up 25 seconds             0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   2 hours ago   Up 25 seconds             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        2 hours ago   Up 25 seconds             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     2 hours ago   Up 25 seconds (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        2 hours ago   Up 25 seconds             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          2 hours ago   Up 25 seconds             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 hours ago   Up 25 seconds             
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-web-1  Running
+ Container airadio-nginx-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+2026-04-08 22:13:50 [boot-health] unhealthy on attempt 4; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED       STATUS                    PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 hours ago   Up 42 seconds             0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   2 hours ago   Up 42 seconds             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        2 hours ago   Up 42 seconds             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     2 hours ago   Up 41 seconds (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        2 hours ago   Up 41 seconds             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          2 hours ago   Up 41 seconds             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 hours ago   Up 42 seconds             
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Recreate
+ Container airadio-api-1  Recreated
+ Container airadio-worker-1  Recreate
+ Container airadio-worker-1  Recreated
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Starting
+ Container airadio-api-1  Started
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-worker-1  Starting
+ Container airadio-worker-1  Started
+2026-04-08 22:14:23 [boot-health] unhealthy on attempt 5; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                        PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          32 seconds ago   Up 17 seconds                 0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   2 hours ago      Up About a minute             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        2 hours ago      Up About a minute             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     2 hours ago      Up About a minute (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        2 hours ago      Up About a minute             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          2 hours ago      Up About a minute             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       30 seconds ago   Up 16 seconds                 
+2026-04-08 22:14:38 [boot-health] unhealthy on attempt 6; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                        PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          48 seconds ago   Up 33 seconds                 0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   2 hours ago      Up About a minute             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        2 hours ago      Up About a minute             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     2 hours ago      Up About a minute (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        2 hours ago      Up About a minute             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "/bin/sh -lc 'npm in…"   web          2 hours ago      Up About a minute             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       46 seconds ago   Up 31 seconds                 
+ Container airadio-api-1  Restarting
+ Container airadio-worker-1  Restarting
+ Container airadio-api-1  Started
+ Container airadio-worker-1  Started
+2026-04-08 22:15:06 [boot-health] healthy on attempt 7
+2026-04-14 17:40:30 [boot-health] starting
+unable to get image 'airadio-api': Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+1999-12-31 20:00:57 [boot-health] unhealthy on attempt 1; applying recovery
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+1999-12-31 20:01:12 [boot-health] unhealthy on attempt 2; applying recovery
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+2026-04-14 22:19:46 [boot-health] unhealthy on attempt 3; applying recovery
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+unable to get image 'airadio-web': Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+2026-04-14 22:20:02 [boot-health] unhealthy on attempt 4; applying recovery
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+unable to get image 'postgres:16': Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+2026-04-14 22:20:17 [boot-health] unhealthy on attempt 5; applying recovery
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+2026-04-14 22:20:32 [boot-health] unhealthy on attempt 6; applying recovery
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+2026-04-14 22:20:48 [boot-health] unhealthy on attempt 7; applying recovery
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+unable to get image 'postgres:16': Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+2026-04-14 22:21:03 [boot-health] unhealthy on attempt 8; applying recovery
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+unable to get image 'postgres:16': Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+2026-04-14 22:21:19 [boot-health] unhealthy on attempt 9; applying recovery
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+2026-04-14 22:21:34 [boot-health] unhealthy on attempt 10; applying recovery
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+2026-04-14 22:21:49 [boot-health] failed to restore healthy state after retries
+2026-04-15 19:22:08 [boot-health] starting
+ Container airadio-postgres-1  Running
+ Container airadio-redis-1  Running
+ Container airadio-api-1  Running
+ Container airadio-worker-1  Running
+ Container airadio-web-1  Running
+ Container airadio-nginx-1  Running
+ Container airadio-liquidsoap-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Waiting
+ Container airadio-api-1  Waiting
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Healthy
+ Container airadio-api-1  Healthy
+ Container airadio-web-1  Waiting
+ Container airadio-api-1  Waiting
+ Container airadio-api-1  Healthy
+ Container airadio-web-1  Healthy
+2026-04-15 21:20:22 [boot-health] healthy on attempt 1
+2026-05-07 15:28:16 [boot-health] starting
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-liquidsoap-1  Running
+ Container airadio-worker-1  Running
+ Container airadio-web-1  Running
+ Container airadio-nginx-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-postgres-1  Waiting
+ Container airadio-api-1  Waiting
+ Container airadio-api-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Error
+ Container airadio-api-1  Error
+dependency failed to start: container airadio-api-1 is unhealthy
+2026-05-07 15:53:10 [boot-health] unhealthy on attempt 1; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED        STATUS                                  PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          45 hours ago   Restarting (1) Less than a second ago   
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   3 weeks ago    Up 26 years                             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        3 weeks ago    Up 26 years                             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     4 weeks ago    Up 26 years (healthy)                   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        4 weeks ago    Up 26 years                             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          45 hours ago   Up 26 years (health: starting)          0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       45 hours ago   Restarting (1) Less than a second ago   
+2026-05-07 15:53:26 [boot-health] unhealthy on attempt 2; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED        STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          45 hours ago   Up 16 seconds (health: starting)   0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   3 weeks ago    Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        3 weeks ago    Up 26 years                        0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     4 weeks ago    Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        4 weeks ago    Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          45 hours ago   Up 26 years (health: starting)     0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       45 hours ago   Restarting (1) 3 seconds ago       
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-worker-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Starting
+ Container airadio-api-1  Started
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+2026-05-07 15:53:47 [boot-health] unhealthy on attempt 3; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED        STATUS                            PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          45 hours ago   Up 2 seconds (health: starting)   0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   3 weeks ago    Up 26 years                       
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        3 weeks ago    Up 26 years                       0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     4 weeks ago    Up 26 years (healthy)             0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        4 weeks ago    Up 26 years                       0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          45 hours ago   Up 26 years (health: starting)    0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       45 hours ago   Restarting (1) 5 seconds ago      
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-web-1  Recreate
+ Container airadio-web-1  Recreated
+ Container airadio-nginx-1  Recreate
+ Container airadio-nginx-1  Recreated
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Waiting
+ Container airadio-api-1  Error
+dependency failed to start: container airadio-api-1 is unhealthy
+2026-05-07 15:54:07 [boot-health] unhealthy on attempt 4; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED        STATUS                            PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          45 hours ago   Up 4 seconds (health: starting)   0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   3 weeks ago    Up 26 years                       
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     4 weeks ago    Up 26 years (healthy)             0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        4 weeks ago    Up 26 years                       0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       45 hours ago   Restarting (1) 9 seconds ago      
+ Container airadio-web-1  Restarting
+ Container airadio-nginx-1  Restarting
+ Container airadio-api-1  Restarting
+ Container airadio-worker-1  Restarting
+ Container airadio-web-1  Started
+ Container airadio-worker-1  Started
+ Container airadio-nginx-1  Started
+ Container airadio-api-1  Started
+2026-05-07 15:54:26 [boot-health] unhealthy on attempt 5; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          45 hours ago     Up 2 seconds (health: starting)    0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   3 weeks ago      Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        38 seconds ago   Up 18 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     4 weeks ago      Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        4 weeks ago      Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          39 seconds ago   Up 18 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       45 hours ago     Restarting (1) 1 second ago        
+2026-05-07 15:54:42 [boot-health] unhealthy on attempt 6; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          45 hours ago     Up 2 seconds (health: starting)    0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   3 weeks ago      Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        53 seconds ago   Up 34 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     4 weeks ago      Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        4 weeks ago      Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          54 seconds ago   Up 34 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       45 hours ago     Up 1 second                        
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-worker-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+2026-05-07 15:54:59 [boot-health] unhealthy on attempt 7; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED              STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          45 hours ago         Up 1 second (health: starting)     0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   3 weeks ago          Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        About a minute ago   Up 51 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     4 weeks ago          Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        4 weeks ago          Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          About a minute ago   Up 51 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       45 hours ago         Up 2 seconds                       
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-web-1  Recreate
+ Container airadio-web-1  Recreated
+ Container airadio-nginx-1  Recreate
+ Container airadio-nginx-1  Recreated
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Waiting
+ Container airadio-api-1  Error
+dependency failed to start: container airadio-api-1 is unhealthy
+2026-05-07 15:55:20 [boot-health] unhealthy on attempt 8; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED        STATUS                          PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          45 hours ago   Restarting (1) 2 seconds ago    
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   3 weeks ago    Up 26 years                     
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     4 weeks ago    Up 26 years (healthy)           0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        4 weeks ago    Up 26 years                     0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       45 hours ago   Restarting (1) 20 seconds ago   
+ Container airadio-worker-1  Restarting
+ Container airadio-nginx-1  Restarting
+ Container airadio-api-1  Restarting
+ Container airadio-web-1  Restarting
+ Container airadio-web-1  Started
+ Container airadio-worker-1  Started
+ Container airadio-api-1  Started
+ Container airadio-nginx-1  Started
+2026-05-07 15:55:37 [boot-health] unhealthy on attempt 9; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          45 hours ago     Up 1 second (health: starting)     0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   3 weeks ago      Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        37 seconds ago   Up 16 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     4 weeks ago      Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        4 weeks ago      Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          39 seconds ago   Up 16 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       45 hours ago     Up 3 seconds                       
+2026-05-07 15:55:53 [boot-health] unhealthy on attempt 10; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          45 hours ago     Up 2 seconds (health: starting)    0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   3 weeks ago      Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        52 seconds ago   Up 32 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     4 weeks ago      Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        4 weeks ago      Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          54 seconds ago   Up 32 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       45 hours ago     Restarting (1) 5 seconds ago       
+2026-05-07 15:56:08 [boot-health] failed to restore healthy state after retries
+2026-05-16 06:35:05 [boot-health] starting
+ Container airadio-postgres-1  Running
+ Container airadio-redis-1  Running
+ Container airadio-api-1  Running
+ Container airadio-liquidsoap-1  Running
+ Container airadio-worker-1  Running
+ Container airadio-web-1  Running
+ Container airadio-nginx-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Waiting
+ Container airadio-postgres-1  Waiting
+ Container airadio-api-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Error
+ Container airadio-api-1  Error
+dependency failed to start: container airadio-api-1 is unhealthy
+1999-12-31 20:01:25 [boot-health] unhealthy on attempt 1; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED                  STATUS                                  PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          Less than a second ago   Restarting (1) Less than a second ago   
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   Less than a second ago   Up 21 seconds                           
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        Less than a second ago   Up 21 seconds                           0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     Less than a second ago   Up 21 seconds (healthy)                 0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        Less than a second ago   Up 21 seconds                           0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          Less than a second ago   Up 21 seconds (health: starting)        0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       Less than a second ago   Up Less than a second                   
+1999-12-31 20:01:41 [boot-health] unhealthy on attempt 2; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED                  STATUS                                  PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          Less than a second ago   Restarting (1) Less than a second ago   
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   Less than a second ago   Up 37 seconds                           
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        Less than a second ago   Up 37 seconds                           0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     Less than a second ago   Up 37 seconds (healthy)                 0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        Less than a second ago   Up 37 seconds                           0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          Less than a second ago   Up 37 seconds (health: starting)        0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       Less than a second ago   Up 2 seconds                            
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-worker-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+1999-12-31 20:01:58 [boot-health] unhealthy on attempt 3; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED                  STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          Less than a second ago   Up 2 seconds (health: starting)    0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   Less than a second ago   Up 54 seconds                      
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        Less than a second ago   Up 54 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     Less than a second ago   Up 54 seconds (healthy)            0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        Less than a second ago   Up 54 seconds                      0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          Less than a second ago   Up 54 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       Less than a second ago   Restarting (1) 6 seconds ago       
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-web-1  Recreate
+ Container airadio-web-1  Recreated
+ Container airadio-nginx-1  Recreate
+ Container airadio-nginx-1  Recreated
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Waiting
+ Container airadio-api-1  Error
+dependency failed to start: container airadio-api-1 is unhealthy
+2026-05-16 09:40:54 [boot-health] unhealthy on attempt 4; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED       STATUS                         PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          10 days ago   Restarting (1) 5 seconds ago   
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   4 weeks ago   Up 26 years                    
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     5 weeks ago   Up 26 years (healthy)          0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        5 weeks ago   Up 26 years                    0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       10 days ago   Restarting (1) 26 years ago    
+ Container airadio-web-1  Restarting
+ Container airadio-nginx-1  Restarting
+ Container airadio-api-1  Restarting
+ Container airadio-worker-1  Restarting
+ Container airadio-nginx-1  Started
+ Container airadio-worker-1  Started
+ Container airadio-web-1  Started
+ Container airadio-api-1  Started
+2026-05-16 09:41:19 [boot-health] unhealthy on attempt 5; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED        STATUS                                  PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          10 days ago    Restarting (1) Less than a second ago   
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   4 weeks ago    Up 26 years                             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        26 years ago   Up 23 seconds                           0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     5 weeks ago    Up 26 years (healthy)                   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        5 weeks ago    Up 26 years                             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          26 years ago   Up 23 seconds (health: starting)        0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       10 days ago    Restarting (1) Less than a second ago   
+2026-05-16 09:41:34 [boot-health] unhealthy on attempt 6; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED        STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          10 days ago    Up 1 second (health: starting)     0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   4 weeks ago    Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        26 years ago   Up 39 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     5 weeks ago    Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        5 weeks ago    Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          26 years ago   Up 39 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       10 days ago    Restarting (1) 1 second ago        
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-worker-1  Starting
+ Container airadio-worker-1  Started
+2026-05-16 09:41:51 [boot-health] unhealthy on attempt 7; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED        STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          10 days ago    Restarting (1) 2 seconds ago       
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   4 weeks ago    Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        26 years ago   Up 56 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     5 weeks ago    Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        5 weeks ago    Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          26 years ago   Up 56 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       10 days ago    Restarting (1) 2 seconds ago       
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-web-1  Recreate
+ Container airadio-web-1  Recreated
+ Container airadio-nginx-1  Recreate
+ Container airadio-nginx-1  Recreated
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Waiting
+ Container airadio-api-1  Error
+dependency failed to start: container airadio-api-1 is unhealthy
+2026-05-16 09:42:14 [boot-health] unhealthy on attempt 8; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED       STATUS                          PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          10 days ago   Restarting (1) 2 seconds ago    
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   4 weeks ago   Up 26 years                     
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     5 weeks ago   Up 26 years (healthy)           0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        5 weeks ago   Up 26 years                     0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       10 days ago   Restarting (1) 24 seconds ago   
+ Container airadio-web-1  Restarting
+ Container airadio-worker-1  Restarting
+ Container airadio-api-1  Restarting
+ Container airadio-nginx-1  Restarting
+ Container airadio-web-1  Started
+ Container airadio-api-1  Started
+ Container airadio-nginx-1  Started
+ Container airadio-worker-1  Started
+2026-05-16 09:42:34 [boot-health] unhealthy on attempt 9; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          10 days ago      Up 4 seconds (health: starting)    0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   4 weeks ago      Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        41 seconds ago   Up 19 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     5 weeks ago      Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        5 weeks ago      Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          42 seconds ago   Up 19 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       10 days ago      Up 2 seconds                       
+2026-05-16 09:42:50 [boot-health] unhealthy on attempt 10; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          10 days ago      Up 6 seconds (health: starting)    0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   4 weeks ago      Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        56 seconds ago   Up 36 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     5 weeks ago      Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        5 weeks ago      Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          57 seconds ago   Up 36 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       10 days ago      Restarting (1) 5 seconds ago       
+2026-05-16 09:43:05 [boot-health] failed to restore healthy state after retries
+2026-05-21 09:07:37 [boot-health] starting
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-liquidsoap-1  Running
+ Container airadio-worker-1  Running
+ Container airadio-web-1  Running
+ Container airadio-nginx-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Waiting
+ Container airadio-api-1  Waiting
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Error
+ Container airadio-api-1  Error
+dependency failed to start: container airadio-api-1 is unhealthy
+1999-12-31 20:01:24 [boot-health] unhealthy on attempt 1; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED                  STATUS                                  PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          Less than a second ago   Restarting (1) Less than a second ago   
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   Less than a second ago   Up 20 seconds                           
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        Less than a second ago   Up 20 seconds                           0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     Less than a second ago   Up 20 seconds (healthy)                 0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        Less than a second ago   Up 20 seconds                           0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          Less than a second ago   Up 20 seconds (health: starting)        0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       Less than a second ago   Restarting (1) Less than a second ago   
+2026-05-26 00:21:20 [boot-health] unhealthy on attempt 2; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED       STATUS                                  PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 weeks ago   Restarting (1) Less than a second ago   
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   5 weeks ago   Up 26 years                             
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        9 days ago    Up 26 years                             0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     6 weeks ago   Up 26 years (healthy)                   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        6 weeks ago   Up 26 years                             0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          9 days ago    Up 26 years (health: starting)          0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 weeks ago   Restarting (1) 3 seconds ago            
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-worker-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+2026-05-26 00:21:37 [boot-health] unhealthy on attempt 3; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED       STATUS                            PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 weeks ago   Up 3 seconds (health: starting)   0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   5 weeks ago   Up 26 years                       
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        9 days ago    Up 26 years                       0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     6 weeks ago   Up 26 years (healthy)             0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        6 weeks ago   Up 26 years                       0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          9 days ago    Up 26 years (health: starting)    0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 weeks ago   Restarting (1) 5 seconds ago      
+ Container airadio-postgres-1  Running
+ Container airadio-redis-1  Running
+ Container airadio-api-1  Running
+ Container airadio-web-1  Recreate
+ Container airadio-web-1  Recreated
+ Container airadio-nginx-1  Recreate
+ Container airadio-nginx-1  Recreated
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Waiting
+ Container airadio-api-1  Error
+dependency failed to start: container airadio-api-1 is unhealthy
+2026-05-26 00:21:57 [boot-health] unhealthy on attempt 4; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED       STATUS                            PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 weeks ago   Up 6 seconds (health: starting)   0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   5 weeks ago   Up 26 years                       
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     6 weeks ago   Up 26 years (healthy)             0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        6 weeks ago   Up 26 years                       0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 weeks ago   Restarting (1) 9 seconds ago      
+ Container airadio-api-1  Restarting
+ Container airadio-nginx-1  Restarting
+ Container airadio-web-1  Restarting
+ Container airadio-worker-1  Restarting
+ Container airadio-web-1  Started
+ Container airadio-nginx-1  Started
+ Container airadio-api-1  Started
+ Container airadio-worker-1  Started
+2026-05-26 00:22:15 [boot-health] unhealthy on attempt 5; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 weeks ago      Up 1 second (health: starting)     0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   5 weeks ago      Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        37 seconds ago   Up 16 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     6 weeks ago      Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        6 weeks ago      Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          38 seconds ago   Up 16 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 weeks ago      Up 2 seconds                       
+2026-05-26 00:22:31 [boot-health] unhealthy on attempt 6; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 weeks ago      Up 2 seconds (health: starting)    0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   5 weeks ago      Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        52 seconds ago   Up 32 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     6 weeks ago      Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        6 weeks ago      Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          53 seconds ago   Up 32 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 weeks ago      Restarting (1) 3 seconds ago       
+ Container airadio-postgres-1  Running
+ Container airadio-redis-1  Running
+ Container airadio-api-1  Running
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-worker-1  Starting
+ Container airadio-worker-1  Started
+2026-05-26 00:22:47 [boot-health] unhealthy on attempt 7; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED              STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 weeks ago          Restarting (1) 3 seconds ago       
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   5 weeks ago          Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        About a minute ago   Up 48 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     6 weeks ago          Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        6 weeks ago          Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          About a minute ago   Up 48 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 weeks ago          Restarting (1) 11 seconds ago      
+ Container airadio-redis-1  Running
+ Container airadio-postgres-1  Running
+ Container airadio-api-1  Running
+ Container airadio-web-1  Recreate
+ Container airadio-web-1  Recreated
+ Container airadio-nginx-1  Recreate
+ Container airadio-nginx-1  Recreated
+ Container airadio-postgres-1  Waiting
+ Container airadio-postgres-1  Healthy
+ Container airadio-api-1  Waiting
+ Container airadio-api-1  Error
+dependency failed to start: container airadio-api-1 is unhealthy
+2026-05-26 00:23:10 [boot-health] unhealthy on attempt 8; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED       STATUS                          PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 weeks ago   Restarting (1) 2 seconds ago    
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   5 weeks ago   Up 26 years                     
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     6 weeks ago   Up 26 years (healthy)           0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        6 weeks ago   Up 26 years                     0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 weeks ago   Restarting (1) 17 seconds ago   
+ Container airadio-api-1  Restarting
+ Container airadio-worker-1  Restarting
+ Container airadio-web-1  Restarting
+ Container airadio-nginx-1  Restarting
+ Container airadio-web-1  Started
+ Container airadio-nginx-1  Started
+ Container airadio-worker-1  Started
+ Container airadio-api-1  Started
+2026-05-26 00:23:27 [boot-health] unhealthy on attempt 9; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 weeks ago      Up 1 second (health: starting)     0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   5 weeks ago      Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        37 seconds ago   Up 16 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     6 weeks ago      Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        6 weeks ago      Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          39 seconds ago   Up 16 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 weeks ago      Up 2 seconds                       
+2026-05-26 00:23:42 [boot-health] unhealthy on attempt 10; applying recovery
+NAME                   IMAGE                       COMMAND                  SERVICE      CREATED          STATUS                             PORTS
+airadio-api-1          airadio-api                 "/bin/bash -lc 'cd a…"   api          2 weeks ago      Up 1 second (health: starting)     0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+airadio-liquidsoap-1   savonet/liquidsoap:v2.2.5   "/bin/sh -lc /etc/li…"   liquidsoap   5 weeks ago      Up 26 years                        
+airadio-nginx-1        nginx:1.27                  "/docker-entrypoint.…"   nginx        53 seconds ago   Up 32 seconds                      0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+airadio-postgres-1     postgres:16                 "docker-entrypoint.s…"   postgres     6 weeks ago      Up 26 years (healthy)              0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+airadio-redis-1        redis:7                     "docker-entrypoint.s…"   redis        6 weeks ago      Up 26 years                        0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+airadio-web-1          airadio-web                 "docker-entrypoint.s…"   web          55 seconds ago   Up 32 seconds (health: starting)   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+airadio-worker-1       airadio-worker              "/bin/bash -lc 'cd a…"   worker       2 weeks ago      Restarting (1) 4 seconds ago       
+2026-05-26 00:23:58 [boot-health] failed to restore healthy state after retries

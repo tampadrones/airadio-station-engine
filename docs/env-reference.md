@@ -1,0 +1,51 @@
+# Environment Variable Reference
+
+- `DATABASE_URL`: SQLAlchemy sync DB URL
+- `ASYNC_DATABASE_URL`: async DB URL
+- `REDIS_URL`: Redis connection URL
+- `GENERATOR_BASE_URL`: ACE-Step host (default `http://10.0.0.5:7860`)
+- `GENERATOR_PREDICT_PATH`: Gradio predict path (default `/gradio_api/call/generation_wrapper`)
+- `GENERATOR_TIMEOUT_SECONDS`: per-request timeout
+- `GENERATOR_MAX_RETRIES`: retries before fail
+- `GENERATOR_RETRY_BACKOFF_SECONDS`: linear retry backoff
+- `PROMPT_REFINER_BASE_URLS`: comma-separated OpenWebUI base URLs for prompt/lyrics refinement (example `http://10.0.0.5`; can include fallback hosts)
+- `PROMPT_REFINER_MODEL`: model name exposed by OpenWebUI/Ollama relay for prompt refinement (empty disables remote refinement)
+- `PROMPT_REFINER_TIMEOUT_SECONDS`: timeout for prompt refinement calls
+- `PROMPT_REFINER_API_KEY`: optional bearer token for OpenWebUI API
+- `LYRICS_REFINER_BASE_URLS`: comma-separated OpenWebUI base URLs dedicated to lyric generation (falls back to `PROMPT_REFINER_BASE_URLS` if empty)
+- `LYRICS_REFINER_MODEL`: dedicated lyric model name (for example `qwen2.5`; falls back to `PROMPT_REFINER_MODEL` if empty)
+- `LYRICS_REFINER_TIMEOUT_SECONDS`: timeout for lyric generation calls
+- `LYRICS_REFINER_API_KEY`: optional bearer token for lyric generation calls (falls back to `PROMPT_REFINER_API_KEY` if empty)
+- `LYRICS_REFINER_TEMPERATURE`: creativity temperature for lyric generation
+- `PROMPT_FORCE_ASCII_ENGLISH`: when true, sanitize prompt/lyrics to ASCII-only English character set before generation
+- `STATION_MIN_FIT_SCORE`: minimum station-fit score required to promote generated tracks
+- `STATION_MIN_QC_SCORE`: minimum QC score required to promote generated tracks
+- `HOT_STORAGE_ROOT`: hot storage root
+- `WARM_STORAGE_ROOT`: warm storage root
+- `COLD_STORAGE_ROOT`: cold storage root
+- `TEMP_STORAGE_ROOT`: temp outputs root
+- `FAILED_STORAGE_ROOT`: failed artifacts root
+- `HLS_ROOT`: generated HLS files root
+- `HLS_PUBLIC_BASE_URL`: external stream base URL
+- `PLAYBACK_ROOT`: playback sidecar root directory
+- `ENABLE_STRUCTURED_LOGGING`: JSON log toggle
+- `STATION_DEFAULT_TARGET_QUEUE_DEPTH`: default queue target
+- `STATION_DEFAULT_MIN_READY_TRACKS`: refill threshold
+- `STATION_REFILL_MAX_GENERATIONS_PER_CYCLE`: max generation jobs per station per worker cycle
+- `STATION_HOT_QUOTA_GB`: per-station hot quota
+- `STATION_WARM_QUOTA_GB`: per-station warm quota
+- `STATION_COLD_PREVIEW_QUOTA_GB`: per-station preview quota
+- `HOT_RETENTION_HOURS`: hot retention default
+- `WARM_RETENTION_DAYS`: warm retention default
+- `PREVIEW_RETENTION_DAYS`: preview retention default
+- `GENERATED_STORAGE_CAP_GB`: total generated-media cap in GB (default `10`)
+- `INCLUDE_ACE_STEP_EXPORT_IN_CAP`: include `ACE_STEP_EXPORT_DIR` mirror files in cap accounting (default `true`)
+- `STORAGE_CLEANUP_INTERVAL_SECONDS`: how often the worker runs storage cleanup (default `300`)
+- `GENERATION_STORAGE_FORMAT`: stored output format (`wav` or `mp3`; default `wav`). Generation requests to ACE-Step remain WAV for compatibility; MP3 is produced by local transcode when enabled.
+- `GENERATION_MP3_BITRATE_KBPS`: MP3 bitrate when `GENERATION_STORAGE_FORMAT=mp3` (default `192`)
+- `GENERATION_MP3_SAMPLE_RATE`: MP3 sample rate when `GENERATION_STORAGE_FORMAT=mp3` (default `44100`)
+- `ADMIN_DEFAULT_USERNAME`: default admin username (if auth added)
+- `ADMIN_DEFAULT_PASSWORD`: default admin password (if auth added)
+- `WORKER_TICK_SECONDS`: worker loop cadence
+- `TIMEZONE`: circadian daypart timezone
+- `GENERATION_STARTUP_STALE_TRACK_MINUTES`: one-time worker startup stale in-flight repair threshold (default `30`)

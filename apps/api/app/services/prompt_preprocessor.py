@@ -1,0 +1,1554 @@
+from __future__ import annotations
+
+import json
+import hashlib
+import re
+import unicodedata
+import uuid
+from datetime import datetime
+from dataclasses import dataclass
+from typing import Any
+
+import httpx
+
+from app.services.prompt_builder import build_music_caption_formula, build_song_concept_prompt, build_technical_parameters
+
+_AUTH_TOKEN_CACHE: dict[str, tuple[str, float]] = {}
+_TEMPLATE_PHRASES = {
+    "we move through the noise with our heads held high",
+    "the night keeps turning and the signal stays strong",
+    "we lean into baseline, where we know we belong",
+    "stay in the signal, stay in the sound",
+    "we rise then settle when the beat comes around",
+    "hold this moment, frame by frame, in time",
+}
+_LYRIC_PRODUCTION_TERMS = {
+    "kick",
+    "snare",
+    "hi-hat",
+    "hihat",
+    "bpm",
+    "metronome",
+    "eq",
+    "compressor",
+    "sidechain",
+}
+_TOPIC_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "or",
+    "the",
+    "for",
+    "with",
+    "into",
+    "from",
+    "this",
+    "that",
+    "your",
+    "radio",
+    "station",
+    "track",
+    "song",
+    "music",
+    "custom",
+    "baseline",
+    "momentum",
+}
+_NON_LYRIC_TOPIC_HINTS = {
+    "inspired",
+    "vocals",
+    "vocal",
+    "guitar",
+    "guitars",
+    "drums",
+    "bass",
+    "tempo",
+    "pulse",
+    "rhythm",
+    "mix",
+    "texture",
+    "male",
+    "female",
+    "rock",
+    "metal",
+    "industrial",
+}
+
+
+@dataclass
+class PreprocessedGeneration:
+    prompt: str
+    negative_prompt: str
+    lyrics: str | None
+    source: str
+    diagnostics: dict[str, Any]
+    music_caption: str = ""
+    technical_parameters: dict[str, str] | None = None
+
+
+def _sanitize_ascii_text(text: str, *, collapse_whitespace: bool = False) -> str:
+    normalized = unicodedata.normalize("NFKD", text or "")
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    ascii_text = ascii_text.replace("\r\n", "\n").replace("\r", "\n")
+    ascii_text = "".join(ch for ch in ascii_text if ch == "\n" or 32 <= ord(ch) <= 126)
+    if collapse_whitespace:
+        ascii_text = re.sub(r"\s+", " ", ascii_text)
+    return ascii_text.strip()
+
+
+def _finalize_lyrics_for_generator(lyrics: str | None) -> str | None:
+    raw = (lyrics or "").strip()
+    if not raw:
+        return None
+
+    section_pattern = re.compile(r"^\[(Intro|Verse 1|Verse 2|Pre-Chorus|Chorus|Bridge|Final Chorus|Outro)\]\s*$", re.IGNORECASE)
+    colon_section_pattern = re.compile(r"^(Intro|Verse 1|Verse 2|Pre-Chorus|Chorus|Bridge|Final Chorus|Outro):\s*$", re.IGNORECASE)
+    drop_patterns = (
+        re.compile(r"^\s*Tone:\s*", re.IGNORECASE),
+        re.compile(r"^\s*Theme anchors:\s*", re.IGNORECASE),
+        re.compile(r"^\s*Style anchor:\s*", re.IGNORECASE),
+        re.compile(r"^\s*Avoid verbatim repeats", re.IGNORECASE),
+        re.compile(r"^\s*Station style:\s*", re.IGNORECASE),
+        re.compile(r"^\s*Station personality:\s*", re.IGNORECASE),
+        re.compile(r"^\s*Station name:\s*", re.IGNORECASE),
+        re.compile(r"^\s*(Mood|Genre|Topic):\s*", re.IGNORECASE),
+        re.compile(r"^\s*Keep language clean", re.IGNORECASE),
+        re.compile(r"^\s*Natural language is allowed", re.IGNORECASE),
+        re.compile(r"^\s*User-generated custom station\.?\s*$", re.IGNORECASE),
+    )
+
+    out_lines: list[str] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            out_lines.append("")
+            continue
+        if any(p.match(stripped) for p in drop_patterns):
+            continue
+        m = section_pattern.match(stripped)
+        if m:
+            out_lines.append(f"[{m.group(1).upper()}]")
+            continue
+        m = colon_section_pattern.match(stripped)
+        if m:
+            out_lines.append(f"[{m.group(1).upper()}]")
+            continue
+        lowered = stripped.lower()
+        if any(re.search(rf"\b{re.escape(term)}\b", lowered) for term in _LYRIC_PRODUCTION_TERMS):
+            continue
+        out_lines.append(stripped)
+
+    text = "\n".join(out_lines)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text or None
+
+
+def _lyrics_is_too_templatey(lyrics: str | None) -> bool:
+    text = (lyrics or "").strip()
+    if not text:
+        return True
+    lowered = text.lower()
+    phrase_hits = sum(1 for phrase in _TEMPLATE_PHRASES if phrase in lowered)
+    lines = [line.strip().lower() for line in text.splitlines() if line.strip() and not line.strip().endswith(":")]
+    if not lines:
+        return True
+    unique_ratio = len(set(lines)) / max(1, len(lines))
+    return phrase_hits >= 2 or unique_ratio < 0.75
+
+
+def _tempo_target(genre: str, daypart: str) -> str:
+    g = (genre or "").lower()
+    if "trap" in g:
+        return "130-155 BPM with halftime feel"
+    if "synthwave" in g:
+        return "95-120 BPM with steady pulse"
+    if "lo-fi" in g or "lofi" in g or "chillhop" in g:
+        return "72-92 BPM with relaxed swing"
+    if "rock" in g or "metal" in g:
+        return "110-150 BPM with live-band drive"
+    if daypart in {"late_night", "night"}:
+        return "80-110 BPM with lower intensity"
+    return "90-130 BPM aligned with the target genre"
+
+
+def _build_lyrics_draft(
+    *,
+    genre: str,
+    personality: str,
+    station_name: str,
+    station_description: str,
+    daypart: str,
+    mood: str,
+    station_profile: dict[str, Any],
+    song_topic: str,
+    variation_salt: str,
+    recent_tracks: list[dict[str, Any]],
+) -> str | None:
+    lyrics_mode = str(station_profile.get("lyrics_mode", "mixed"))
+    if lyrics_mode == "instrumental_only":
+        return None
+
+    clean_only = bool(station_profile.get("clean_lyrics_only", True))
+    topics = station_profile.get("topic_ideas", [])
+    topic_list = [str(x).strip() for x in (topics or []) if str(x).strip()][:4]
+    safety = "Keep language clean and radio-safe." if clean_only else "Natural language is allowed; avoid gratuitous explicit content."
+    topic_suffix = f"Theme anchors: {', '.join(topic_list)}." if topic_list else f"Theme anchors: {song_topic}."
+    primary_topic = song_topic.strip() or "momentum"
+
+    intro_lines = [
+        f"Street lamps bloom while the {daypart} air turns electric",
+        f"Concrete glows as the {daypart} rush comes alive",
+        f"Window lights paint the avenue in restless color",
+        f"Headlights trace the skyline as the pulse locks in",
+        f"The city exhales and the speakers catch the spark",
+        f"Midnight static fades and the rhythm takes control",
+    ]
+    verse_openers = [
+        f"We run {primary_topic} like a code in overdrive",
+        f"{primary_topic.title()} hits first and the room snaps to focus",
+        f"Every lane opens when {primary_topic} takes the lead",
+        f"{primary_topic.title()} turns quiet doubt into momentum",
+        f"We chase {primary_topic} where the skyline fractures light",
+        f"{primary_topic.title()} writes our route in bright phosphor lines",
+    ]
+    pre_lifts = [
+        "One hard inhale and the room starts to levitate",
+        "When the floor shakes, every heartbeat aligns",
+        "No looking back once the pressure flips to gold",
+        "We lock the timing and the whole block wakes up",
+        "The voltage climbs and every signal turns green",
+        "One more second and we break into flight",
+    ]
+    bridge_lines = [
+        f"No safe route now, we bend {primary_topic} into lightning",
+        f"From floor to skyline, {primary_topic} keeps lifting the horizon",
+        f"Every setback turns to fuel while {primary_topic} stays in motion",
+        f"We cross the limit line and carry {primary_topic} through the storm",
+        f"The crowd leans in as {primary_topic} turns to anthem",
+        f"We hit the apex and hold {primary_topic} like fire",
+    ]
+    genre_motifs = {
+        "synthwave": ["neon glass", "analog glow", "midnight skyline", "chrome horizon"],
+        "rock": ["open highway", "burning amplifiers", "thunder drums", "wide-screen chorus"],
+        "trap": ["808 pressure", "dark room pulse", "late-night focus", "streetlight cadence"],
+    }
+
+    g = genre.lower()
+    motifs = ["city static", "night drive", "signal flare", "afterhours air", "neon dust", "fast-lane focus"]
+    for key, words in genre_motifs.items():
+        if key in g:
+            motifs = words
+            break
+    recent_titles = [str(item.get("title", "")).strip() for item in (recent_tracks or []) if str(item.get("title", "")).strip()]
+    recent_hint = ", ".join(recent_titles[:3])
+    mood_terms = {
+        "baseline": ["steady", "locked", "grounded", "focused"],
+        "rise": ["climbing", "expanding", "opening", "ascending"],
+        "peak": ["blazing", "maximum", "unstoppable", "electric"],
+        "release": ["weightless", "cooldown", "echoing", "floating"],
+    }
+    mood_words = mood_terms.get(str(mood).lower(), ["steady", "focused", "alive", "bright"])
+    action_lines = [
+        f"We map the route in real time and never drop the thread",
+        f"Every bar lands sharp and keeps the whole frame moving",
+        f"We keep the pressure clean and let the chorus strike hard",
+        f"The rhythm stays precise while the melody cuts deeper",
+        f"We carry raw intent and make the hook feel inevitable",
+        f"No wasted motion, only forward pull and bright momentum",
+    ]
+    outro_lines = [
+        "Tail lights fade but the fire in us stays lit",
+        "We leave the echo rolling through the avenue",
+        "The room goes dark while the heartbeat keeps time",
+        "Night closes in and the signal still feels alive",
+        "We drift to silence with the skyline still glowing",
+        "The station breathes and the last chord hangs bright",
+    ]
+
+    def pick(options: list[str], label: str) -> str:
+        if not options:
+            return ""
+        key = f"{genre}|{personality}|{daypart}|{mood}|{primary_topic}|{variation_salt}|{label}"
+        digest = hashlib.sha1(key.encode("utf-8")).digest()
+        idx = digest[0] % len(options)
+        return options[idx]
+
+    def pick_unique(options: list[str], label: str, count: int) -> list[str]:
+        if not options or count <= 0:
+            return []
+        key = f"{genre}|{personality}|{daypart}|{mood}|{primary_topic}|{variation_salt}|{label}"
+        digest = hashlib.sha1(key.encode("utf-8")).digest()
+        start = digest[0] % len(options)
+        ordered = options[start:] + options[:start]
+        if digest[1] % 2 == 1:
+            ordered = list(reversed(ordered))
+        return ordered[: min(count, len(options))]
+
+    if _is_nu_metal_like(genre=genre, taste_hints=station_profile.get("taste_hints", [])):
+        intro_lines = [
+            "Glass walls breathe while the hallway hums in red light",
+            "Cold neon leaks through the cracks in the sealed room",
+            "Steel air presses down and the ceiling starts to bend",
+            "Static crawls the wires while the exit sign flickers blind",
+        ]
+        verse_1_lines = [
+            f"{primary_topic.title()} lives under the skin like a live wire",
+            "My shadow drags chains through the fluorescent haze",
+            "Every locked door throws my name back in my face",
+            "The mirror shakes but never breaks clean enough to crawl through",
+        ]
+        pre_lines = [
+            "I feel the pressure counting down inside my teeth",
+            "One more pulse and the whole frame starts to split",
+            "The room folds in and I still push against it",
+            "Every breath tastes like sparks and rust",
+        ]
+        chorus_lines = [
+            "Pull me out of the glass",
+            "Cut the loop before it closes",
+            "I keep waking in the same black bloom",
+            "Every exit seals itself around me",
+        ]
+        verse_2_lines = [
+            "The walls learn my shape and tighten when I move",
+            "I leave fingerprints in the dust where the light goes dead",
+            "My pulse kicks back through the wires in the floor",
+            "I drag this damaged engine through another failed escape",
+        ]
+        bridge_lines = [
+            "If I break the frame, I break with it",
+            "No clean horizon, just shattered signal and breath",
+            f"{primary_topic.title()} turns the fracture into a mouth",
+            "I bite down hard enough to hear the circuit scream",
+        ]
+        outro_lines = [
+            "The red light fades but the pressure stays awake",
+            "I hear the lock turn slow inside the dark",
+            "No clean release, only static and heat",
+            "The room goes black and the echo keeps my shape",
+        ]
+        verse_1 = pick_unique(verse_1_lines, "nm-v1", 4)
+        verse_2 = pick_unique(verse_2_lines, "nm-v2", 4)
+        pre_1 = pick_unique(pre_lines, "nm-pre-a", 2)
+        pre_2 = pick_unique(pre_lines, "nm-pre-b", 2)
+        chorus_1 = pick_unique(chorus_lines, "nm-chorus-a", 4)
+        chorus_2 = pick_unique(chorus_lines, "nm-chorus-b", 4)
+        bridge = pick_unique(bridge_lines, "nm-bridge", 3)
+        outro = pick_unique(outro_lines, "nm-outro", 2)
+        final_chorus = pick_unique(chorus_lines, "nm-final-chorus", 4)
+        return (
+            f"[INTRO]\n"
+            f"{pick(intro_lines, 'nm-intro')}\n\n"
+            f"[VERSE 1]\n"
+            f"{chr(10).join(verse_1)}\n\n"
+            f"[PRE-CHORUS]\n"
+            f"{chr(10).join(pre_1)}\n\n"
+            f"[CHORUS]\n"
+            f"{chr(10).join(chorus_1)}\n\n"
+            f"[VERSE 2]\n"
+            f"{chr(10).join(verse_2)}\n\n"
+            f"[PRE-CHORUS]\n"
+            f"{chr(10).join(pre_2)}\n\n"
+            f"[CHORUS]\n"
+            f"{chr(10).join(chorus_2)}\n\n"
+            f"[BRIDGE]\n"
+            f"{chr(10).join(bridge)}\n\n"
+            f"[FINAL CHORUS]\n"
+            f"{chr(10).join(final_chorus)}\n\n"
+            f"[OUTRO]\n"
+            f"{chr(10).join(outro)}\n"
+        )
+
+    return (
+        f"[Intro]\n"
+        f"{pick(intro_lines, 'intro')}\n\n"
+        f"[Verse 1]\n"
+        f"{pick(verse_openers, 'verse1-open')}\n"
+        f"{pick(action_lines, 'verse1-action')}\n"
+        f"{pick(mood_words, 'verse1-mood').capitalize()} energy holds the lane while the streetlights roll\n"
+        f"{pick(motifs, 'motif-v1a').capitalize()} colors the frame and keeps us moving\n"
+        f"{pick(motifs, 'motif-v1b').capitalize()} frames the scene while {personality} holds the line\n"
+        f"\n[Pre-Chorus]\n"
+        f"{pick(pre_lifts, 'pre1')}\n"
+        f"Every mile pulls the focus in tighter tonight\n\n"
+        f"[Chorus]\n"
+        f"We hold the spark where the glass towers divide\n"
+        f"The room turns gold when the night opens wide\n"
+        f"No pause, no fade, {primary_topic} burns through the blue\n"
+        f"Right here, right now, the skyline pulls us through\n\n"
+        f"[Verse 2]\n"
+        f"Street signs blur and the whole block tilts forward\n"
+        f"We push {primary_topic} until hesitation breaks\n"
+        f"{pick(action_lines, 'verse2-action')}\n"
+        f"{pick(mood_words, 'verse2-mood').capitalize()} pressure keeps the chorus in our grip\n"
+        f"{pick(motifs, 'motif-v2').capitalize()} keeps the station moving bold and bright\n\n"
+        f"[Pre-Chorus]\n"
+        f"{pick(pre_lifts, 'pre2')}\n"
+        f"Every echo says we are alive tonight\n\n"
+        f"[Chorus]\n"
+        f"We catch the flare where the dark avenues rise\n"
+        f"Every window throws a signal to the sky\n"
+        f"No pause, no fade, {primary_topic} cuts clean through\n"
+        f"Right here, right now, the city turns us loose\n\n"
+        f"[Bridge]\n"
+        f"{pick(bridge_lines, 'bridge')}\n"
+        f"{topic_suffix}\n"
+        f"Style anchor: {station_name} with {personality} tone.\n"
+        f"Avoid verbatim repeats from recent titles: {recent_hint or 'none'}.\n"
+        f"{safety}\n"
+        f"\n[Final Chorus]\n"
+        f"We lift the spark past the rooftops and signs\n"
+        f"The last red light breaks open into shine\n"
+        f"No pause, no fade, let the whole block unify\n"
+        f"Right here, right now, we leave the dark behind\n\n"
+        f"[Outro]\n"
+        f"{pick(outro_lines, 'outro1')}\n"
+        f"{pick(outro_lines, 'outro2')}\n"
+    )
+
+
+def _build_local_prompt(
+    *,
+    base_prompt: str,
+    music_caption: str,
+    technical_parameters: dict[str, str],
+    genre: str,
+    daypart: str,
+    mood: str,
+    station_profile: dict[str, Any],
+    lyrics: str | None,
+    chosen_topic: str,
+) -> str:
+    _ = (base_prompt, genre, daypart, mood, station_profile, chosen_topic)
+    return build_song_concept_prompt(
+        music_caption=music_caption,
+        technical_parameters=technical_parameters,
+        lyrics=lyrics,
+    )
+
+
+def _extract_json(text: str) -> dict[str, Any] | None:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        pass
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            parsed = json.loads(raw[start : end + 1])
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+async def _try_remote_refine(
+    *,
+    base_urls: list[str],
+    model: str,
+    api_key: str | None,
+    auth_email: str | None,
+    auth_password: str | None,
+    timeout_seconds: int,
+    base_prompt: str,
+    local_prompt: str,
+    negative_prompt: str,
+    lyrics: str | None,
+    lyrics_mode: str,
+    context_payload: dict[str, Any],
+) -> PreprocessedGeneration | None:
+    system = (
+        "You are a music-prompt refiner for AI song generation. "
+        "Return strict JSON only with keys: music_caption, technical_parameters, negative_prompt, lyrics. "
+        "If lyrics should be instrumental-only, return empty string for lyrics. "
+        "music_caption must remain a single-line, comma-separated creative prompt using this order: "
+        "genre/style, influence/artist comparison, mood/energy, sonic texture, theme/story, "
+        "setting/visual imagery, vocal style, rhythm/pace. "
+        "technical_parameters must be an object with Key, BPM, Time Signature, Duration, Energy Level, "
+        "Structure Density, and optional Subgenre Tags, Instrumentation, Dynamic Arc, Mix Texture. "
+        "Duration must use M:SS. BPM must be numeric. Energy Level must be Low, Medium, High, or Extreme. "
+        "Structure Density must be Sparse, Balanced, or Dense. "
+        "lyrics must use [INTRO], [VERSE 1], optional [PRE-CHORUS], [CHORUS], [VERSE 2], "
+        "optional [PRE-CHORUS], [CHORUS], [BRIDGE], [FINAL CHORUS], [OUTRO]. "
+        "Use English words with ASCII characters only."
+    )
+    user_payload = {
+        "base_prompt": base_prompt,
+        "local_prompt": local_prompt,
+        "negative_prompt": negative_prompt,
+        "lyrics": lyrics or "",
+        "station_context": context_payload,
+    }
+
+    for raw_url in base_urls:
+        base_url = raw_url.strip().rstrip("/")
+        if not base_url:
+            continue
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                payload = {
+                    "model": model,
+                    "temperature": 0.3,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": json.dumps(user_payload)},
+                    ],
+                }
+                headers = {"Content-Type": "application/json"}
+                token = _get_cached_auth_token(base_url)
+                auth_value = token or api_key
+                if auth_value:
+                    headers["Authorization"] = f"Bearer {auth_value}"
+
+                resp = await client.post(f"{base_url}/api/chat/completions", headers=headers, json=payload)
+                if resp.status_code == 401 and auth_email and auth_password:
+                    token = await _signin_openwebui_token(
+                        client=client,
+                        base_url=base_url,
+                        auth_email=auth_email,
+                        auth_password=auth_password,
+                    )
+                    if token:
+                        headers["Authorization"] = f"Bearer {token}"
+                        resp = await client.post(f"{base_url}/api/chat/completions", headers=headers, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+            choices = data.get("choices", []) if isinstance(data, dict) else []
+            if not choices:
+                continue
+            message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
+            content = message.get("content", "") if isinstance(message, dict) else ""
+            parsed = _extract_json(content if isinstance(content, str) else "")
+            if not parsed:
+                continue
+            music_caption = str(parsed.get("music_caption", "")).strip()
+            technical_raw = parsed.get("technical_parameters", {})
+            technical_parameters = {
+                str(k): str(v).strip()
+                for k, v in (technical_raw.items() if isinstance(technical_raw, dict) else [])
+                if str(k).strip() and str(v).strip()
+            }
+            refined_neg = str(parsed.get("negative_prompt", "")).strip() or negative_prompt
+            refined_lyrics = str(parsed.get("lyrics", "")).strip() or None
+            if lyrics_mode == "instrumental_only":
+                refined_lyrics = None
+            if not music_caption:
+                continue
+            return PreprocessedGeneration(
+                prompt=music_caption,
+                negative_prompt=refined_neg,
+                lyrics=refined_lyrics,
+                source=f"openwebui:{base_url}",
+                diagnostics={"provider": "openwebui", "model": model},
+                music_caption=music_caption,
+                technical_parameters=technical_parameters,
+            )
+        except Exception:
+            continue
+    return None
+
+
+def _clean_topic_phrase(value: str) -> str:
+    raw = " ".join(str(value or "").split()).strip()
+    if not raw:
+        return ""
+    lowered = raw.lower()
+    if any(re.search(rf"\b{re.escape(term)}\b", lowered) for term in _LYRIC_PRODUCTION_TERMS):
+        return ""
+    parts = [p for p in re.findall(r"[A-Za-z0-9']+", raw) if p]
+    kept = [p for p in parts if p.lower() not in _TOPIC_STOPWORDS]
+    if not kept:
+        return ""
+    text = " ".join(kept[:6]).strip()
+    return text if len(text) >= 3 else ""
+
+
+def _is_usable_topic_hint(value: str) -> bool:
+    lowered = str(value or "").lower()
+    return not any(re.search(rf"\b{re.escape(term)}\b", lowered) for term in _NON_LYRIC_TOPIC_HINTS)
+
+
+def _dedupe_lower(items: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        key = item.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item.strip())
+    return out
+
+
+def _genre_topic_fallbacks(genre: str) -> list[str]:
+    g = (genre or "").lower()
+    if "trap" in g or "rap" in g:
+        return [
+            "late night hustle",
+            "city ambition",
+            "pressure into power",
+            "afterhours focus",
+            "victory lap",
+            "from doubt to dominance",
+        ]
+    if _is_nu_metal_like(genre=genre):
+        return [
+            "failed escape cycle",
+            "psychological entrapment",
+            "glass city breakdown",
+            "pressure in the wires",
+            "fractured identity",
+            "static in the blood",
+        ]
+    if "rock" in g or "metal" in g:
+        return [
+            "against the storm",
+            "breaking point",
+            "scar tissue resolve",
+            "last stand confession",
+            "pressure on the chest",
+            "teeth against the dark",
+        ]
+    if "synthwave" in g:
+        return [
+            "neon skyline chase",
+            "midnight arcade romance",
+            "chrome horizon",
+            "retro future escape",
+            "city lights confession",
+            "night drive signal",
+        ]
+    if "lofi" in g or "lo-fi" in g or "chillhop" in g:
+        return [
+            "quiet desk reflections",
+            "rain on window glass",
+            "soft focus memories",
+            "slow morning reset",
+            "letters never sent",
+            "late night journaling",
+        ]
+    return [
+        "city lights",
+        "new beginnings",
+        "long road home",
+        "midnight stories",
+        "quiet confidence",
+        "afterhours stories",
+    ]
+
+
+def _daypart_topic_fallbacks(daypart: str) -> list[str]:
+    d = (daypart or "").lower()
+    if d in {"morning", "early_morning"}:
+        return ["sunrise reset", "fresh start", "first light ambition"]
+    if d in {"afternoon"}:
+        return ["midday focus", "forward motion", "second wind"]
+    if d in {"evening"}:
+        return ["city afterglow", "golden hour release", "streetlight stories"]
+    if d in {"night", "late_night"}:
+        return ["midnight drive", "afterhours confession", "moonlit resolve"]
+    return []
+
+
+def _mood_topic_fallbacks(mood: str) -> list[str]:
+    m = (mood or "").lower()
+    if m == "rise":
+        return ["breaking through", "turning point", "climbing higher"]
+    if m == "peak":
+        return ["no limits", "all in tonight", "center of the storm"]
+    if m == "release":
+        return ["letting go", "quiet aftermath", "dawn after the rush"]
+    return ["steady confidence", "holding the line", "keep moving forward"]
+
+
+def _recent_topic_keys(recent_tracks: list[dict[str, Any]] | None) -> set[str]:
+    keys: set[str] = set()
+    for item in recent_tracks or []:
+        if not isinstance(item, dict):
+            continue
+        for field in ("topic", "song_topic"):
+            cleaned = _clean_topic_phrase(str(item.get(field, "")))
+            if cleaned:
+                keys.add(cleaned.lower())
+    return keys
+
+
+def _choose_song_topic(
+    station_profile: dict[str, Any],
+    mood: str,
+    *,
+    genre: str = "",
+    daypart: str = "",
+    recent_tracks: list[dict[str, Any]] | None = None,
+    salt: str = "",
+) -> str:
+    topics = station_profile.get("topic_ideas", [])
+    taste_hints = station_profile.get("taste_hints", [])
+    explicit_topics: list[str] = []
+    if isinstance(topics, list):
+        explicit_topics = [_clean_topic_phrase(str(item)) for item in topics if str(item).strip()]
+        explicit_topics = [x for x in explicit_topics if x]
+    candidates: list[str] = []
+    if isinstance(taste_hints, list):
+        candidates.extend(
+            [
+                _clean_topic_phrase(str(item))
+                for item in taste_hints
+                if str(item).strip() and _is_usable_topic_hint(str(item))
+            ]
+        )
+
+    recent_keys = _recent_topic_keys(recent_tracks)
+    if explicit_topics:
+        base_pool = _dedupe_lower(explicit_topics)
+    else:
+        candidates.extend([_clean_topic_phrase(x) for x in _genre_topic_fallbacks(genre)])
+        if not _is_nu_metal_like(genre=genre, taste_hints=taste_hints if isinstance(taste_hints, list) else None):
+            candidates.extend([_clean_topic_phrase(x) for x in _daypart_topic_fallbacks(daypart)])
+        candidates.extend([_clean_topic_phrase(x) for x in _mood_topic_fallbacks(mood)])
+        base_pool = _dedupe_lower([x for x in candidates if x])
+
+    fresh = [x for x in base_pool if x.lower() not in recent_keys]
+    pool = fresh or base_pool
+    if not pool:
+        pool = [f"{(genre or mood or 'night').strip()} energy".strip()]
+
+    seed_src = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}|{mood}|{genre}|{daypart}|{salt}|{'|'.join(pool)}"
+    digest = hashlib.sha1(seed_src.encode("utf-8")).digest()
+    idx = digest[0] % len(pool)
+    base_topic = pool[idx]
+
+    if explicit_topics and base_topic.lower() in {x.lower() for x in explicit_topics} and isinstance(taste_hints, list):
+        refined_hints = [h for h in (_clean_topic_phrase(str(x)) for x in taste_hints) if h]
+        for hint in refined_hints:
+            if hint.lower() == base_topic.lower():
+                continue
+            if hint.lower() in base_topic.lower() or base_topic.lower() in hint.lower():
+                continue
+            merged = f"{base_topic} {hint}".strip()
+            if len(merged) <= 64:
+                return merged
+            break
+    return base_topic
+
+
+def _suggest_song_title(*, station_name: str, topic: str, daypart: str) -> str:
+    seed = topic.strip() or f"{station_name} {daypart}"
+    tokens = re.findall(r"[A-Za-z0-9']+", seed)
+    if not tokens:
+        return f"{station_name} Signal"
+    clipped = tokens[:6]
+    return " ".join(word.capitalize() for word in clipped)
+
+
+def suggest_track_title(
+    *,
+    genre: str,
+    mood: str,
+    topic: str,
+    daypart: str,
+    personality: str,
+    salt: str,
+) -> str:
+    topic_tokens = re.findall(r"[A-Za-z0-9']+", topic or "")
+    mood_tokens = re.findall(r"[A-Za-z0-9']+", mood or "")
+    daypart_tokens = re.findall(r"[A-Za-z0-9']+", daypart or "")
+    persona_tokens = re.findall(r"[A-Za-z0-9']+", personality or "")
+
+    banned = {"custom", "baseline", "track", "station", "host", "radio", "music", "song"}
+    filtered_topic = [t for t in topic_tokens if t.lower() not in banned]
+
+    g = (genre or "").lower()
+    fallback_by_genre = {
+        "trap": ["Respawn", "Raid", "Overclock", "Speedrun"],
+        "rock": ["Afterburn", "Thunderline", "Steelheart", "Voltage"],
+        "synthwave": ["Afterglow", "Neonline", "Night Drive", "Static Sky"],
+        "lofi": ["Low Tide", "Soft Focus", "Night Window", "Quiet Circuit"],
+    }
+    if filtered_topic:
+        base_topic = " ".join(filtered_topic[:3]).title()
+    else:
+        if "trap" in g or "rap" in g:
+            base_topic = "Respawn"
+        elif _is_nu_metal_like(genre=genre):
+            base_topic = "Afterburn"
+        elif "rock" in g or "metal" in g:
+            base_topic = "Afterburn"
+        elif "synthwave" in g:
+            base_topic = "Afterglow"
+        elif "lofi" in g or "lo-fi" in g:
+            base_topic = "Soft Focus"
+        else:
+            base_topic = "Signal"
+
+    mood_alias = {
+        "baseline": "Steady",
+        "rise": "Lift",
+        "peak": "Surge",
+        "release": "Afterglow",
+    }
+    raw_mood = mood_tokens[0].lower() if mood_tokens else ""
+    mood_word = mood_alias.get(raw_mood, mood_tokens[0].title() if mood_tokens else "Pulse")
+    daypart_word = (daypart_tokens[0].title() if daypart_tokens else "Night")
+    persona_word = (persona_tokens[0].title() if persona_tokens else "Radio")
+
+    if "trap" in g or "rap" in g:
+        suffixes = ["Raid", "Overclock", "Respawn", "Bossfight"]
+    elif _is_nu_metal_like(genre=genre):
+        suffixes = ["Voltage", "Collapse", "Blackglass", "Afterburn"]
+    elif "rock" in g or "metal" in g:
+        suffixes = ["Anthem", "Ignition", "Voltage", "Afterburn"]
+    elif "synthwave" in g:
+        suffixes = ["Neon", "Drive", "Afterglow", "Midnight"]
+    else:
+        suffixes = ["Signal", "Motion", "Drift", "Echo"]
+
+    digest = hashlib.sha1(f"{genre}|{mood}|{topic}|{daypart}|{personality}|{salt}".encode("utf-8")).digest()
+    extra = []
+    for key, words in fallback_by_genre.items():
+        if key in g:
+            extra = words
+            break
+    suffix_pool = suffixes + extra
+    suffix = suffix_pool[digest[0] % len(suffix_pool)]
+    variant = digest[1] % 4
+    candidates = [
+        f"{base_topic} {suffix}",
+        f"{daypart_word} {base_topic}",
+        f"{base_topic} {mood_word}",
+        f"{base_topic} {persona_word}",
+    ]
+    title = candidates[variant]
+    title = re.sub(r"\s+", " ", title).strip()
+    if title.lower() in banned:
+        title = f"{base_topic} {suffix}"
+    return title[:80] or "Untitled Signal"
+
+
+def _extract_chat_content(data: dict[str, Any]) -> str | None:
+    choices = data.get("choices", []) if isinstance(data, dict) else []
+    if not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    message = first.get("message", {})
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if isinstance(content, str):
+        return content.strip() or None
+    return None
+
+
+def _strip_code_fence(text: str) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```") and cleaned.endswith("```"):
+        lines = cleaned.splitlines()
+        if len(lines) >= 3:
+            return "\n".join(lines[1:-1]).strip()
+    return cleaned
+
+
+def _extract_title_and_lyrics(text: str) -> tuple[str | None, str]:
+    cleaned = _strip_code_fence(text or "")
+    if not cleaned:
+        return None, ""
+
+    # JSON path: {"title":"...","lyrics":"..."}
+    try:
+        payload = json.loads(cleaned)
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        title = str(payload.get("title", "")).strip() or None
+        raw_lyrics = payload.get("lyrics", "")
+        if isinstance(raw_lyrics, dict):
+            ordered_sections = [
+                "[INTRO]",
+                "[VERSE 1]",
+                "[PRE-CHORUS]",
+                "[CHORUS]",
+                "[VERSE 2]",
+                "[PRE-CHORUS 2]",
+                "[CHORUS 2]",
+                "[BRIDGE]",
+                "[FINAL CHORUS]",
+                "[OUTRO]",
+            ]
+            blocks: list[str] = []
+            consumed: set[str] = set()
+            for section in ordered_sections:
+                for key, value in raw_lyrics.items():
+                    normalized_key = str(key).strip().upper()
+                    target_key = section.upper()
+                    if normalized_key in {"[PRE-CHORUS 2]", "[PRE-CHORUS TWO]"}:
+                        normalized_key = "[PRE-CHORUS]"
+                    if normalized_key in {"[CHORUS 2]", "[CHORUS TWO]"}:
+                        normalized_key = "[CHORUS]"
+                    if normalized_key != target_key or normalized_key in consumed:
+                        continue
+                    line_text = str(value).strip()
+                    if line_text:
+                        blocks.append(f"{target_key}\n{line_text}")
+                        consumed.add(normalized_key)
+                        break
+            if not blocks:
+                for key, value in raw_lyrics.items():
+                    normalized_key = str(key).strip().upper()
+                    line_text = str(value).strip()
+                    if normalized_key and line_text:
+                        blocks.append(f"{normalized_key}\n{line_text}")
+            lyrics = "\n\n".join(blocks).strip()
+        else:
+            lyrics = str(raw_lyrics).strip()
+        if lyrics:
+            return title, lyrics
+
+    # Plain-text path: first line starts with "Title:".
+    lines = [ln.rstrip() for ln in cleaned.splitlines()]
+    if lines:
+        m = re.match(r"^\s*title\s*:\s*(.+?)\s*$", lines[0], flags=re.IGNORECASE)
+        if m:
+            title = m.group(1).strip() or None
+            lyrics = "\n".join(lines[1:]).strip()
+            return title, lyrics
+
+    return None, cleaned
+
+
+def _derive_lyric_style_guidance(*, genre: str, taste_hints: list[str] | None, mood: str) -> str:
+    hints = [str(x).strip() for x in (taste_hints or []) if str(x).strip()]
+    filtered: list[str] = []
+    for item in hints:
+        low = item.lower()
+        if any(re.search(rf"\b{re.escape(term)}\b", low) for term in _LYRIC_PRODUCTION_TERMS):
+            continue
+        filtered.append(item)
+
+    g = (genre or "").lower()
+    if "rock" in g or "metal" in g:
+        fallback = "anthemic, rebellious, road-trip energy, big emotional hooks"
+    elif "synthwave" in g:
+        fallback = "cinematic neon mood, nostalgic romance, night-drive atmosphere"
+    elif "trap" in g or "rap" in g:
+        fallback = "confident, gritty, streetwise focus, sharp punchlines"
+    elif "lofi" in g or "lo-fi" in g:
+        fallback = "introspective, calm, late-night reflection, soft imagery"
+    else:
+        fallback = f"{mood} emotional tone with genre-appropriate imagery"
+
+    if not filtered:
+        return fallback
+    return ", ".join(filtered[:4])
+
+
+def _is_nu_metal_like(*, genre: str, taste_hints: list[str] | None = None) -> bool:
+    haystacks = [str(genre or "").lower()]
+    haystacks.extend(str(x).lower() for x in (taste_hints or []) if str(x).strip())
+    joined = " | ".join(haystacks)
+    return any(token in joined for token in ["nu-metal", "numetal", "alternative metal", "industrial rock", "deftones", "nine inch nails"])
+
+
+def _genre_lyric_direction(*, genre: str, taste_hints: list[str] | None, mood: str) -> tuple[str, str]:
+    if _is_nu_metal_like(genre=genre, taste_hints=taste_hints):
+        return (
+            "Use tense, physical, claustrophobic imagery with short punchy lines, internal conflict, mechanical pressure, fractured glass, neon haze, failed escape, and strained human vulnerability.",
+            "Avoid romantic night-drive language, optimistic skyline slogans, clean pop uplift, and generic city-lights freedom imagery.",
+        )
+    g = (genre or "").lower()
+    if "rock" in g or "metal" in g:
+        return (
+            "Use concrete, visceral rock imagery with tension, motion, impact, and a strong emotional hook.",
+            "Avoid dreamy synth-pop romance language, generic nightlife slogans, and lightweight self-help phrasing.",
+        )
+    if "synthwave" in g:
+        return (
+            "Lean into cinematic nocturnal imagery, chrome light, longing, velocity, and widescreen momentum.",
+            "Avoid gritty metal aggression, rap brags, and stripped acoustic confessionals.",
+        )
+    if "trap" in g or "rap" in g:
+        return (
+            "Use sharp, direct, high-confidence language with pressure, ambition, and focused detail.",
+            "Avoid arena-rock slogans, soft dream-pop abstraction, and nostalgic retro romance.",
+        )
+    return (
+        f"Keep the imagery and line shape authentic to {genre} with a {mood} emotional arc.",
+        "Avoid drifting into unrelated genre language or generic radio-safe platitudes.",
+    )
+
+
+def _lyric_bpm_range(genre: str, daypart: str) -> tuple[int, int]:
+    g = (genre or "").lower()
+    if "trap" in g or "rap" in g:
+        return (132, 156)
+    if "synthwave" in g:
+        return (96, 122)
+    if "lofi" in g or "lo-fi" in g or "chillhop" in g:
+        return (72, 96)
+    if "rock" in g or "metal" in g:
+        return (108, 150)
+    if daypart in {"late_night", "night"}:
+        return (82, 112)
+    return (92, 132)
+
+
+def _lyric_keyscale_hint(*, genre: str, mood: str, topic: str, variation_salt: str) -> str:
+    g = (genre or "").lower()
+    mood_is_bright = str(mood).lower() in {"rise", "peak"}
+    if "trap" in g or "rap" in g:
+        pool = ["F minor", "D minor", "G minor", "A minor", "C minor"]
+    elif "synthwave" in g:
+        pool = ["D major", "A minor", "E minor", "G major", "B minor"]
+    elif "lofi" in g or "lo-fi" in g:
+        pool = ["C major", "A minor", "D minor", "F major", "E minor"]
+    elif "rock" in g or "metal" in g:
+        pool = ["E minor", "A minor", "D minor", "G major", "B minor"]
+    else:
+        pool = ["D minor", "A minor", "C major", "G major"]
+    if mood_is_bright:
+        pool = [k for k in pool if "major" in k.lower()] + [k for k in pool if "minor" in k.lower()]
+    digest = hashlib.sha1(f"{genre}|{mood}|{topic}|{variation_salt}".encode("utf-8")).digest()
+    return pool[digest[0] % len(pool)]
+
+
+def _lyric_target_duration_sec(*, station_profile: dict[str, Any], genre: str, mood: str, lyrics_mode: str) -> int:
+    base = int(station_profile.get("target_duration_sec", 320))
+    if str(lyrics_mode) == "instrumental_only":
+        base = max(150, base - 8)
+    elif str(lyrics_mode) == "vocal_forward":
+        base = min(320, base + 8)
+    mood_offsets = {"baseline": 0, "rise": -6, "peak": -12, "release": 10}
+    base += int(mood_offsets.get(str(mood).lower(), 0))
+    min_sec = int(station_profile.get("duration_min_sec", 320))
+    max_sec = int(station_profile.get("duration_max_sec", 320))
+    min_sec = max(120, min(min_sec, 320))
+    max_sec = max(120, min(max_sec, 320))
+    if min_sec > max_sec:
+        min_sec, max_sec = max_sec, min_sec
+    base = max(min_sec, min(max_sec, base))
+    return max(150, min(320, base))
+
+
+def _build_lyric_constraints(
+    *,
+    station_profile: dict[str, Any],
+    genre: str,
+    daypart: str,
+    mood: str,
+    topic: str,
+    variation_salt: str,
+) -> dict[str, Any]:
+    bpm_lo, bpm_hi = _lyric_bpm_range(genre, daypart)
+    lyrics_mode = str(station_profile.get("lyrics_mode", "mixed"))
+    vocal_ratio = int(station_profile.get("vocal_ratio", 40))
+    cohesion = int(station_profile.get("cohesion_spectrum", 80))
+    discovery = int(station_profile.get("discovery_depth", 20))
+    mood_vol = int(station_profile.get("mood_volatility", 30))
+    energy_var = int(station_profile.get("energy_variability", 30))
+    return {
+        "tempo_range_bpm": f"{bpm_lo}-{bpm_hi}",
+        "key_hint": _lyric_keyscale_hint(genre=genre, mood=mood, topic=topic, variation_salt=variation_salt),
+        "time_signature": "4/4",
+        "target_duration_sec": _lyric_target_duration_sec(station_profile=station_profile, genre=genre, mood=mood, lyrics_mode=lyrics_mode),
+        "lyrics_mode": lyrics_mode,
+        "vocal_ratio": vocal_ratio,
+        "cohesion": cohesion,
+        "discovery": discovery,
+        "mood_volatility": mood_vol,
+        "energy_variability": energy_var,
+        "daypart": daypart,
+    }
+
+
+async def _try_remote_lyrics(
+    *,
+    base_urls: list[str],
+    model: str,
+    api_key: str | None,
+    auth_email: str | None,
+    auth_password: str | None,
+    timeout_seconds: int,
+    temperature: float,
+    genre: str,
+    title: str,
+    mood: str,
+    topic: str,
+    clean_lyrics_only: bool,
+    station_name: str,
+    station_description: str,
+    personality: str,
+    recent_tracks: list[dict[str, Any]],
+    variation_salt: str,
+    topic_ideas: list[str] | None = None,
+    taste_hints: list[str] | None = None,
+    lyric_constraints: dict[str, Any] | None = None,
+) -> tuple[str | None, str | None, str | None]:
+    safety = "Use radio-safe language only." if clean_lyrics_only else "Avoid gratuitous explicit content."
+    topic_items = [str(x).strip() for x in (topic_ideas or []) if str(x).strip()]
+    if topic.strip() and topic not in topic_items:
+        topic_items.append(topic)
+    chosen_topic = topic.strip() if topic.strip() else (topic_items[0] if topic_items else "night drive")
+    feel_text = _derive_lyric_style_guidance(genre=genre, taste_hints=taste_hints, mood=mood)
+    direction_text, avoid_text = _genre_lyric_direction(genre=genre, taste_hints=taste_hints, mood=mood)
+    system = (
+        "Return strictly valid JSON with exactly two keys: title, lyrics. "
+        "Use English words with ASCII characters only."
+    )
+    avoid_lines = (
+        "Avoid stock filler lines, generic momentum slogans, and any repeated boilerplate phrasing."
+    )
+    constraints = lyric_constraints or {}
+    constraints_block = (
+        f"Tempo {constraints.get('tempo_range_bpm', 'genre-consistent')} BPM, "
+        f"key hint {constraints.get('key_hint', 'genre-consistent')}, "
+        f"meter {constraints.get('time_signature', '4/4')}, "
+        f"target duration {constraints.get('target_duration_sec', 320)}s, "
+        f"lyrics mode {constraints.get('lyrics_mode', 'mixed')}."
+    )
+    user = (
+        f"You are a {genre} song writer.\n"
+        f"Write song lyrics about this exact topic: {chosen_topic}.\n"
+        f"The song should feel like: {feel_text}.\n"
+        f"{direction_text}\n"
+        f"{avoid_text}\n"
+        f"Keep imagery and language authentic to {genre}. {constraints_block}\n"
+        f"{safety}\n"
+        f"{avoid_lines}\n"
+        "Never mention production terms or system/prompt text.\n"
+        f"Avoid copying these recent titles: {', '.join([str(x.get('title', '')).strip() for x in (recent_tracks or []) if str(x.get('title', '')).strip()][:5]) or 'none'}.\n"
+        f"Variation token: {variation_salt}.\n"
+        "Return JSON only: {\"title\":\"...\",\"lyrics\":\"...\"}. "
+        "Set title to a unique, genre-accurate song title (max 80 chars). "
+        "Lyrics must use this exact section order: "
+        "[INTRO] -> [VERSE 1] -> optional [PRE-CHORUS] -> [CHORUS] -> [VERSE 2] -> optional [PRE-CHORUS] -> [CHORUS] -> [BRIDGE] -> [FINAL CHORUS] -> [OUTRO]. "
+        "Use short concrete lines. Lyrics value must be a plain string, not an object. "
+        "Do not reuse any full line between Verse 1 and Verse 2."
+    )
+
+    fallback_text: str | None = None
+    fallback_source: str | None = None
+    fallback_title: str | None = None
+
+    for raw_url in base_urls:
+        base_url = raw_url.strip().rstrip("/")
+        if not base_url:
+            continue
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                headers = {"Content-Type": "application/json"}
+                token = _get_cached_auth_token(base_url)
+                auth_value = token or api_key
+                if auth_value:
+                    headers["Authorization"] = f"Bearer {auth_value}"
+                for attempt in range(2):
+                    payload = {
+                        "model": model,
+                        "temperature": min(0.95, temperature + (attempt * 0.12)),
+                        # Bound remote output length so lyric calls finish within timeout budget.
+                        "max_tokens": 260,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {
+                                "role": "user",
+                                "content": user + f"\nUniqueness pass: {attempt + 1}",
+                            },
+                        ],
+                    }
+                    resp = await client.post(f"{base_url}/api/chat/completions", headers=headers, json=payload)
+                    if resp.status_code == 401 and auth_email and auth_password:
+                        token = await _signin_openwebui_token(
+                            client=client,
+                            base_url=base_url,
+                            auth_email=auth_email,
+                            auth_password=auth_password,
+                        )
+                        if token:
+                            headers["Authorization"] = f"Bearer {token}"
+                            resp = await client.post(f"{base_url}/api/chat/completions", headers=headers, json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    content = _extract_chat_content(data)
+                    if not content:
+                        continue
+                    parsed_title, parsed_lyrics = _extract_title_and_lyrics(content)
+                    text = parsed_lyrics
+                    if not text:
+                        continue
+                    variation_key = variation_salt.strip().lower()
+                    if variation_key and (
+                        variation_key in text.lower() or variation_key in str(parsed_title or "").lower()
+                    ):
+                        continue
+                    # Keep the first non-empty remote response as a fallback candidate.
+                    # This ensures we only fall back to local-template on true remote failures.
+                    if fallback_text is None:
+                        fallback_text = text
+                        fallback_source = base_url
+                        fallback_title = parsed_title
+                    if _lyrics_is_too_templatey(text):
+                        continue
+                    try:
+                        await _persist_openwebui_lyrics_chat(
+                            client=client,
+                            base_url=base_url,
+                            headers=headers,
+                            model=model,
+                            station_name=station_name,
+                            genre=genre,
+                            topic=chosen_topic,
+                            user_prompt=payload["messages"][1]["content"],
+                            assistant_response=content,
+                        )
+                    except Exception:
+                        pass
+                    return text, base_url, parsed_title
+        except Exception:
+            continue
+    if fallback_text:
+        try:
+            async with httpx.AsyncClient(timeout=min(timeout_seconds, 20)) as client:
+                headers = {"Content-Type": "application/json"}
+                token = _get_cached_auth_token(fallback_source or "")
+                auth_value = token or api_key
+                if auth_value:
+                    headers["Authorization"] = f"Bearer {auth_value}"
+                await _persist_openwebui_lyrics_chat(
+                    client=client,
+                    base_url=fallback_source or "",
+                    headers=headers,
+                    model=model,
+                    station_name=station_name,
+                    genre=genre,
+                    topic=chosen_topic,
+                    user_prompt=user,
+                    assistant_response=fallback_text,
+                )
+        except Exception:
+            pass
+        return fallback_text, fallback_source, fallback_title
+    return None, None, None
+
+
+async def _persist_openwebui_lyrics_chat(
+    *,
+    client: httpx.AsyncClient,
+    base_url: str,
+    headers: dict[str, str],
+    model: str,
+    station_name: str,
+    genre: str,
+    topic: str,
+    user_prompt: str,
+    assistant_response: str,
+) -> None:
+    if not base_url:
+        return
+    ts = int(datetime.utcnow().timestamp())
+    user_id = str(uuid.uuid4())
+    assistant_id = str(uuid.uuid4())
+    user_msg = {
+        "id": user_id,
+        "parentId": None,
+        "childrenIds": [assistant_id],
+        "role": "user",
+        "content": user_prompt,
+        "timestamp": ts,
+    }
+    assistant_msg = {
+        "id": assistant_id,
+        "parentId": user_id,
+        "childrenIds": [],
+        "role": "assistant",
+        "content": assistant_response,
+        "timestamp": ts + 1,
+        "model": model,
+        "done": True,
+    }
+    topic_short = " ".join((topic or "").split())[:48] or "lyrics"
+    chat_title = f"AIRadio Lyrics | {station_name} | {topic_short}"[:120]
+    chat_payload = {
+        "title": chat_title,
+        "models": [model],
+        "params": {"temperature": 0.7},
+        # Keep both modern and legacy-compatible structures for OpenWebUI rendering.
+        "messages": [user_msg, assistant_msg],
+        "history": {
+            "messages": {
+                user_id: user_msg,
+                assistant_id: assistant_msg,
+            },
+            "currentId": assistant_id,
+        },
+        "tags": ["airadio", "lyrics", genre.lower().strip() or "genre"],
+    }
+
+    create_resp = await client.post(f"{base_url}/api/v1/chats/new", headers=headers, json={"chat": {}})
+    create_resp.raise_for_status()
+    created = create_resp.json()
+    chat_id = str((created or {}).get("id", "")).strip()
+    if not chat_id:
+        return
+    update_resp = await client.post(
+        f"{base_url}/api/v1/chats/{chat_id}",
+        headers=headers,
+        json={"chat": chat_payload},
+    )
+    update_resp.raise_for_status()
+
+
+def _get_cached_auth_token(base_url: str) -> str | None:
+    now = datetime.utcnow().timestamp()
+    cached = _AUTH_TOKEN_CACHE.get(base_url)
+    if not cached:
+        return None
+    token, expires_at = cached
+    if expires_at <= now:
+        _AUTH_TOKEN_CACHE.pop(base_url, None)
+        return None
+    return token
+
+
+async def _signin_openwebui_token(
+    *,
+    client: httpx.AsyncClient,
+    base_url: str,
+    auth_email: str,
+    auth_password: str,
+) -> str | None:
+    try:
+        resp = await client.post(
+            f"{base_url}/api/v1/auths/signin",
+            json={"email": auth_email, "password": auth_password},
+        )
+        resp.raise_for_status()
+        parsed = resp.json()
+        payload = parsed if isinstance(parsed, dict) else {}
+        token = str(payload.get("token", "")).strip()
+        if token:
+            _AUTH_TOKEN_CACHE[base_url] = (token, datetime.utcnow().timestamp() + 55 * 60)
+            return token
+    except Exception:
+        return None
+    return None
+
+
+async def preprocess_generation(
+    *,
+    settings: Any,
+    station_name: str,
+    station_description: str,
+    genre: str,
+    personality: str,
+    daypart: str,
+    mood: str,
+    station_profile: dict[str, Any],
+    base_prompt: str,
+    negative_prompt: str,
+    recent_tracks: list[dict[str, Any]],
+) -> PreprocessedGeneration:
+    force_ascii = bool(getattr(settings, "prompt_force_ascii_english", True))
+    lyrics_mode = str(station_profile.get("lyrics_mode", "mixed"))
+    clean_lyrics_only = bool(station_profile.get("clean_lyrics_only", True))
+    variation_salt = uuid.uuid4().hex[:12]
+    chosen_topic = _choose_song_topic(
+        station_profile,
+        mood,
+        genre=genre,
+        daypart=daypart,
+        recent_tracks=recent_tracks,
+        salt=variation_salt,
+    )
+    suggested_title = suggest_track_title(
+        genre=genre,
+        mood=mood,
+        topic=chosen_topic,
+        daypart=daypart,
+        personality=personality,
+        salt=datetime.utcnow().isoformat(),
+    )
+    lyric_constraints = _build_lyric_constraints(
+        station_profile=station_profile,
+        genre=genre,
+        daypart=daypart,
+        mood=mood,
+        topic=chosen_topic,
+        variation_salt=variation_salt,
+    )
+    technical_parameters = build_technical_parameters(
+        genre=genre,
+        mood=mood,
+        daypart=daypart,
+        station_profile=station_profile,
+        duration_sec=int(lyric_constraints.get("target_duration_sec", station_profile.get("target_duration_sec", 320))),
+        topic=chosen_topic,
+    )
+    music_caption = build_music_caption_formula(
+        genre=genre,
+        personality=personality,
+        mood=mood,
+        daypart=daypart,
+        station_profile=station_profile,
+    )
+
+    lyrics = _build_lyrics_draft(
+        genre=genre,
+        personality=personality,
+        station_name=station_name,
+        station_description=station_description,
+        daypart=daypart,
+        mood=mood,
+        station_profile=station_profile,
+        song_topic=chosen_topic,
+        variation_salt=variation_salt,
+        recent_tracks=recent_tracks,
+    )
+
+    # Dedicated lyrics generation step (OpenWebUI/Ollama) before music caption refinement.
+    lyrics_source = "local-template"
+    lyrics_model = str(getattr(settings, "lyrics_refiner_model", "") or "").strip() or str(getattr(settings, "prompt_refiner_model", "") or "").strip()
+    lyrics_urls_raw = str(getattr(settings, "lyrics_refiner_base_urls", "") or "") or str(getattr(settings, "prompt_refiner_base_urls", "") or "")
+    # Bound remote lyrics timeout so station refill loops cannot stall for several minutes.
+    lyrics_timeout = min(60, int(getattr(settings, "lyrics_refiner_timeout_seconds", 20)))
+    lyrics_api_key = str(getattr(settings, "lyrics_refiner_api_key", "") or "").strip() or str(getattr(settings, "prompt_refiner_api_key", "") or "").strip() or None
+    lyrics_auth_email = str(getattr(settings, "lyrics_refiner_auth_email", "") or "").strip() or None
+    lyrics_auth_password = str(getattr(settings, "lyrics_refiner_auth_password", "") or "").strip() or None
+    lyrics_temp = float(getattr(settings, "lyrics_refiner_temperature", 0.7))
+    lyrics_urls = [x.strip() for x in lyrics_urls_raw.split(",") if x.strip()]
+
+    if lyrics_mode != "instrumental_only" and lyrics_model and lyrics_urls:
+        title = _suggest_song_title(station_name=station_name, topic=chosen_topic, daypart=daypart)
+        topic_ideas = [str(x).strip() for x in (station_profile.get("topic_ideas", []) or []) if str(x).strip()]
+        taste_hints = [str(x).strip() for x in (station_profile.get("taste_hints", []) or []) if str(x).strip()]
+        remote_result = await _try_remote_lyrics(
+            base_urls=lyrics_urls,
+            model=lyrics_model,
+            api_key=lyrics_api_key,
+            auth_email=lyrics_auth_email,
+            auth_password=lyrics_auth_password,
+            timeout_seconds=lyrics_timeout,
+            temperature=lyrics_temp,
+            genre=genre,
+            title=title,
+            mood=mood,
+            topic=chosen_topic,
+            clean_lyrics_only=clean_lyrics_only,
+            station_name=station_name,
+            station_description=station_description,
+            personality=personality,
+            recent_tracks=recent_tracks,
+            variation_salt=variation_salt,
+            topic_ideas=topic_ideas,
+            taste_hints=taste_hints,
+            lyric_constraints=lyric_constraints,
+        )
+        remote_lyrics: str | None
+        lyrics_base_url: str | None
+        remote_title: str | None
+        if isinstance(remote_result, tuple) and len(remote_result) == 3:
+            remote_lyrics, lyrics_base_url, remote_title = remote_result
+        elif isinstance(remote_result, tuple) and len(remote_result) == 2:
+            remote_lyrics, lyrics_base_url = remote_result
+            remote_title = None
+        else:
+            remote_lyrics, lyrics_base_url, remote_title = None, None, None
+        if remote_lyrics:
+            lyrics = remote_lyrics
+            lyrics_source = f"openwebui:{lyrics_base_url}"
+            if remote_title:
+                suggested_title = " ".join(str(remote_title).split())[:80] or suggested_title
+
+    if force_ascii:
+        negative_prompt = _sanitize_ascii_text(negative_prompt, collapse_whitespace=True)
+        lyrics = _sanitize_ascii_text(lyrics or "") or None
+    lyrics = _finalize_lyrics_for_generator(lyrics)
+    local_prompt = _build_local_prompt(
+        base_prompt=base_prompt,
+        music_caption=music_caption,
+        technical_parameters=technical_parameters,
+        genre=genre,
+        daypart=daypart,
+        mood=mood,
+        station_profile=station_profile,
+        lyrics=lyrics,
+        chosen_topic=chosen_topic,
+    )
+    if force_ascii:
+        local_prompt = _sanitize_ascii_text(local_prompt, collapse_whitespace=False)
+
+    model = str(getattr(settings, "prompt_refiner_model", "") or "").strip()
+    base_urls_raw = str(getattr(settings, "prompt_refiner_base_urls", "") or "")
+    timeout_seconds = int(getattr(settings, "prompt_refiner_timeout_seconds", 20))
+    api_key = str(getattr(settings, "prompt_refiner_api_key", "") or "").strip() or None
+    base_urls = [x.strip() for x in base_urls_raw.split(",") if x.strip()]
+
+    if model and base_urls:
+        remote = await _try_remote_refine(
+            base_urls=base_urls,
+            model=model,
+            api_key=api_key,
+            auth_email=lyrics_auth_email,
+            auth_password=lyrics_auth_password,
+            timeout_seconds=timeout_seconds,
+            base_prompt=base_prompt,
+            local_prompt=local_prompt,
+            negative_prompt=negative_prompt,
+            lyrics=lyrics,
+            lyrics_mode=lyrics_mode,
+            context_payload={
+                "station_name": station_name,
+                "station_description": station_description,
+                "genre": genre,
+                "personality": personality,
+                "daypart": daypart,
+                "mood": mood,
+                "station_profile": station_profile,
+                "recent_tracks": recent_tracks,
+            },
+        )
+        if remote:
+            if force_ascii:
+                remote.prompt = _sanitize_ascii_text(remote.prompt, collapse_whitespace=True)
+                remote.negative_prompt = _sanitize_ascii_text(remote.negative_prompt, collapse_whitespace=True)
+                remote.lyrics = _sanitize_ascii_text(remote.lyrics or "") or None
+            remote.lyrics = _finalize_lyrics_for_generator(remote.lyrics)
+            remote.diagnostics["lyrics_source"] = lyrics_source
+            remote.diagnostics["lyrics_model"] = lyrics_model or "local-template"
+            remote.diagnostics["song_topic"] = chosen_topic
+            remote.diagnostics["suggested_title"] = suggested_title
+            remote.diagnostics["lyric_constraints"] = lyric_constraints
+            if not remote.technical_parameters:
+                remote.technical_parameters = technical_parameters
+            if not remote.music_caption:
+                remote.music_caption = remote.prompt
+            remote.diagnostics["technical_parameters"] = remote.technical_parameters
+            remote.prompt = build_song_concept_prompt(
+                music_caption=remote.music_caption,
+                technical_parameters=remote.technical_parameters,
+                lyrics=remote.lyrics,
+            )
+            return remote
+
+    return PreprocessedGeneration(
+        prompt=local_prompt,
+        negative_prompt=negative_prompt,
+        lyrics=lyrics,
+        source="local-template",
+        diagnostics={
+            "provider": "local",
+            "lyrics_source": lyrics_source,
+            "lyrics_model": lyrics_model or "local-template",
+            "song_topic": chosen_topic,
+            "suggested_title": suggested_title,
+            "lyric_constraints": lyric_constraints,
+            "technical_parameters": technical_parameters,
+        },
+        music_caption=music_caption,
+        technical_parameters=technical_parameters,
+    )

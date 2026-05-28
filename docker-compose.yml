@@ -1,0 +1,125 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airadio
+      POSTGRES_PASSWORD: airadio
+      POSTGRES_DB: airadio
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airadio -d airadio"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /workspace/apps/api:/workspace/packages/generator:/workspace/packages/observability:/workspace/packages/playback:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./:/workspace
+      - airadio_storage:/var/lib/ai-radio
+    working_dir: /workspace
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["cd apps/api && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/stats/stations', timeout=5)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/worker.Dockerfile
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /workspace/apps/api:/workspace/apps/worker:/workspace/packages/generator:/workspace/packages/observability:/workspace/packages/playback:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      api:
+        condition: service_started
+    volumes:
+      - ./:/workspace
+      - airadio_storage:/var/lib/ai-radio
+    working_dir: /workspace
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["cd apps/worker && python -m worker.main"]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    env_file:
+      - .env
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://api:8000/api
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000 >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  liquidsoap:
+    image: savonet/liquidsoap:v2.2.5
+    user: "0:0"
+    volumes:
+      - ./infra/liquidsoap:/etc/liquidsoap
+      - airadio_storage:/var/lib/ai-radio
+    entrypoint: ["/bin/sh", "-lc"]
+    command: ["/etc/liquidsoap/run.sh"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    ports:
+      - "8088:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - airadio_storage:/var/lib/ai-radio
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  airadio_storage:
