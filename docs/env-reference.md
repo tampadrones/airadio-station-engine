@@ -8,15 +8,17 @@
 - `GENERATOR_TIMEOUT_SECONDS`: per-request timeout
 - `GENERATOR_MAX_RETRIES`: retries before fail
 - `GENERATOR_RETRY_BACKOFF_SECONDS`: linear retry backoff
-- `PROMPT_REFINER_BASE_URLS`: comma-separated OpenWebUI base URLs for prompt/lyrics refinement (example `http://10.0.0.5`; can include fallback hosts)
+- `PROMPT_REFINER_BASE_URLS`: comma-separated OpenWebUI-compatible base URLs for optional prompt refinement (example `http://10.0.0.5:31028`; can include fallback hosts)
 - `PROMPT_REFINER_MODEL`: model name exposed by OpenWebUI/Ollama relay for prompt refinement (empty disables remote refinement)
 - `PROMPT_REFINER_TIMEOUT_SECONDS`: timeout for prompt refinement calls
 - `PROMPT_REFINER_API_KEY`: optional bearer token for OpenWebUI API
-- `LYRICS_REFINER_BASE_URLS`: comma-separated OpenWebUI base URLs dedicated to lyric generation (falls back to `PROMPT_REFINER_BASE_URLS` if empty)
-- `LYRICS_REFINER_MODEL`: dedicated lyric model name (for example `qwen2.5`; falls back to `PROMPT_REFINER_MODEL` if empty)
-- `LYRICS_REFINER_TIMEOUT_SECONDS`: timeout for lyric generation calls
-- `LYRICS_REFINER_API_KEY`: optional bearer token for lyric generation calls (falls back to `PROMPT_REFINER_API_KEY` if empty)
-- `LYRICS_REFINER_TEMPERATURE`: creativity temperature for lyric generation
+- `LYRICS_REFINER_BASE_URLS`: comma-separated OpenWebUI base URLs dedicated to lyric generation (example `http://10.0.0.5:31028`; falls back to `PROMPT_REFINER_BASE_URLS` if empty)
+- `LYRICS_REFINER_MODEL`: exact lyric model ID exposed by OpenWebUI `/api/models` (example `tinyllama:latest`; recommended `qwen2.5:7b` when available; falls back to `PROMPT_REFINER_MODEL` if empty)
+- `LYRICS_REFINER_TIMEOUT_SECONDS`: timeout for OpenWebUI lyric generation calls (default `45`)
+- `LYRICS_REFINER_API_KEY`: optional OpenWebUI bearer token for lyric generation calls (falls back to `PROMPT_REFINER_API_KEY` if empty)
+- `LYRICS_REFINER_AUTH_EMAIL`: optional OpenWebUI sign-in email used when no bearer token is configured
+- `LYRICS_REFINER_AUTH_PASSWORD`: optional OpenWebUI sign-in password used when no bearer token is configured
+- `LYRICS_REFINER_TEMPERATURE`: creativity temperature for lyric generation (default `0.9`)
 - `PROMPT_FORCE_ASCII_ENGLISH`: when true, sanitize prompt/lyrics to ASCII-only English character set before generation
 - `STATION_MIN_FIT_SCORE`: minimum station-fit score required to promote generated tracks
 - `STATION_MIN_QC_SCORE`: minimum QC score required to promote generated tracks
@@ -49,3 +51,29 @@
 - `WORKER_TICK_SECONDS`: worker loop cadence
 - `TIMEZONE`: circadian daypart timezone
 - `GENERATION_STARTUP_STALE_TRACK_MINUTES`: one-time worker startup stale in-flight repair threshold (default `30`)
+
+## Self-hosted Lyrics Refiner
+
+AIRadio's lyric refiner is designed for the self-hosted Xavier/OpenWebUI/Ollama path. It calls OpenWebUI's OpenAI-compatible `/api/chat/completions` endpoint, but the configured base URL should be your OpenWebUI service, not OpenAI.
+
+Example:
+
+```env
+LYRICS_REFINER_BASE_URLS=http://10.0.0.5:31028
+LYRICS_REFINER_MODEL=tinyllama:latest
+LYRICS_REFINER_API_KEY=
+LYRICS_REFINER_AUTH_EMAIL=
+LYRICS_REFINER_AUTH_PASSWORD=
+LYRICS_REFINER_TIMEOUT_SECONDS=45
+LYRICS_REFINER_TEMPERATURE=0.9
+```
+
+The model must exactly match an ID returned by OpenWebUI `/api/models`; `qwen2.5:7b` is recommended over `tinyllama:latest` when available because it follows lyric JSON and quality instructions more reliably. Use either `LYRICS_REFINER_API_KEY` for a bearer token or `LYRICS_REFINER_AUTH_EMAIL` plus `LYRICS_REFINER_AUTH_PASSWORD` for OpenWebUI sign-in. Do not commit real tokens or passwords.
+
+Verify the configured refiner before starting generation:
+
+```bash
+python scripts/check_lyrics_refiner.py
+```
+
+If the remote refiner is unavailable, returns unparsable lyrics, or fails the quality gate, AIRadio keeps strict local fallback enabled and uses the final accepted `lyric_quality` diagnostics.

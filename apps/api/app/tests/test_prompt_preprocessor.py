@@ -17,6 +17,8 @@ class DummySettings:
     lyrics_refiner_model = ""
     lyrics_refiner_timeout_seconds = 1
     lyrics_refiner_api_key = ""
+    lyrics_refiner_auth_email = ""
+    lyrics_refiner_auth_password = ""
     lyrics_refiner_temperature = 0.7
 
 
@@ -593,6 +595,51 @@ async def test_remote_lyrics_request_failure_includes_http_status(monkeypatch):
     assert source is None
     assert title is None
     assert diagnostics["error"] == "request_failed:400"
+
+
+@pytest.mark.asyncio
+async def test_remote_lyrics_request_failure_preserves_model_not_found(monkeypatch):
+    diagnostics: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/api/chat/completions"):
+            return httpx.Response(400, json={"detail": "Model not found"})
+        return httpx.Response(404, json={})
+
+    transport = httpx.MockTransport(handler)
+
+    class Client(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(pp.httpx, "AsyncClient", Client)
+
+    lyrics, source, title = await pp._try_remote_lyrics(
+        base_urls=["http://openwebui.local"],
+        model="missing-model",
+        api_key=None,
+        auth_email=None,
+        auth_password=None,
+        timeout_seconds=5,
+        temperature=0.7,
+        genre="Synthwave",
+        title="Tiny List",
+        mood="rise",
+        topic="arcade goodbye",
+        clean_lyrics_only=True,
+        station_name="Neon Harbor",
+        station_description="retro glow",
+        personality="Velvet Static",
+        recent_tracks=[],
+        variation_salt="tinylist",
+        diagnostics=diagnostics,
+    )
+
+    assert lyrics is None
+    assert source is None
+    assert title is None
+    assert diagnostics["error"] == "request_failed:400:model_not_found"
 
 
 def test_finalize_lyrics_for_generator_strips_production_terms():

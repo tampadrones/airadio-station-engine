@@ -1155,6 +1155,18 @@ def _extract_title_and_lyrics(text: str) -> tuple[str | None, str]:
     return title, lyrics
 
 
+def _remote_http_error_reason(exc: httpx.HTTPStatusError) -> str:
+    status = exc.response.status_code
+    reason = f"request_failed:{status}"
+    try:
+        body = exc.response.text[:500].lower()
+    except Exception:
+        body = ""
+    if "model not found" in body or "model_not_found" in body or "model not exist" in body:
+        return f"{reason}:model_not_found"
+    return reason
+
+
 def _derive_lyric_style_guidance(*, genre: str, taste_hints: list[str] | None, mood: str) -> str:
     hints = [str(x).strip() for x in (taste_hints or []) if str(x).strip()]
     filtered: list[str] = []
@@ -1609,7 +1621,7 @@ async def _try_remote_lyrics(
                         pass
                     return text, base_url, parsed_title
         except httpx.HTTPStatusError as exc:
-            note_error(f"request_failed:{exc.response.status_code}")
+            note_error(_remote_http_error_reason(exc))
             continue
         except httpx.TimeoutException:
             note_error("request_failed:timeout")

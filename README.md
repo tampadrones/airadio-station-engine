@@ -43,11 +43,16 @@ docker compose -f docker-compose.yml -f docker-compose.bind.yml up -d --build
 After the stack is verified, the old named volumes can be removed.
 
 ## Prompt Refinement Topology
-- OpenWebUI relay: `http://10.0.0.5`
+- OpenWebUI relay: `http://10.0.0.5:31028`
 - Ollama GPU backend: `http://10.0.0.36`
 - Set:
-  - `PROMPT_REFINER_BASE_URLS=http://10.0.0.5`
+  - `PROMPT_REFINER_BASE_URLS=http://10.0.0.5:31028`
   - `PROMPT_REFINER_MODEL=<your model in OpenWebUI>`
+- Dedicated lyrics should use the self-hosted OpenWebUI/Ollama path:
+  - `LYRICS_REFINER_BASE_URLS=http://10.0.0.5:31028`
+  - `LYRICS_REFINER_MODEL=<exact ID from /api/models>`
+  - `LYRICS_REFINER_API_KEY=<OpenWebUI token>` or OpenWebUI email/password env vars
+- Verify model IDs and auth with `python scripts/check_lyrics_refiner.py`.
 
 ## Reprofile Existing Stations
 Use `POST /api/stations/reprofile` to update station profiles in place.

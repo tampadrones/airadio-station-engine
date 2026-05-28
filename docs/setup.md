@@ -3,7 +3,7 @@
 ## Prerequisites
 - Docker + Docker Compose
 - Access to ACE-Step Gradio host (`http://10.0.0.5:7860` by default)
-- If using prompt refinement: OpenWebUI relay host (`http://10.0.0.5`) with Ollama backend on `http://10.0.0.36`
+- If using prompt or lyric refinement: OpenWebUI relay host (`http://10.0.0.5:31028`) with Ollama backend on `http://10.0.0.36`
 
 ## Local run
 1. `cp .env.example .env`
@@ -42,10 +42,11 @@ docker compose -f docker-compose.yml -f docker-compose.bind.yml up -d --build
 
 ## Key config
 - `GENERATOR_BASE_URL`
-- `PROMPT_REFINER_BASE_URLS` (example: `http://10.0.0.5`)
+- `PROMPT_REFINER_BASE_URLS` (example: `http://10.0.0.5:31028`)
 - `PROMPT_REFINER_MODEL` (OpenWebUI/Ollama model name)
-- `LYRICS_REFINER_BASE_URLS` (example: `http://10.0.0.5`)
-- `LYRICS_REFINER_MODEL` (recommended: `qwen2.5` for lyric drafting)
+- `LYRICS_REFINER_BASE_URLS` (example: `http://10.0.0.5:31028`)
+- `LYRICS_REFINER_MODEL` (exact OpenWebUI `/api/models` ID; recommended: `qwen2.5:7b` when available)
+- `LYRICS_REFINER_API_KEY` or `LYRICS_REFINER_AUTH_EMAIL` / `LYRICS_REFINER_AUTH_PASSWORD`
 - `PLAYBACK_ROOT=/var/lib/ai-radio/playback`
 - `HLS_ROOT=/var/lib/ai-radio/hls`
 - `WORKER_TICK_SECONDS=10`
